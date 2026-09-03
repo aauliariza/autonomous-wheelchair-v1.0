@@ -1,0 +1,67 @@
+# ============================================================
+# STUDENT BASELINE — YOLO26n-Depth  (spec sections E, G)
+# ============================================================
+# Trains the student WITHOUT knowledge distillation. This is Experiment A and
+# the reference the KD variants must beat.
+# Run:  python training/train_student_baseline.py --config configs/student.yaml
+#
+# VERIFIED (session audit):
+#   yolo26n-depth.pt  ->  6,355,617 parameters  (teacher/student ratio 8.97x)
+#   KD feature layers [16, 19, 22] -> channels (64, 128, 256)
+# ============================================================
+
+experiment:
+  name: student_baseline_yolo26n_depth
+  tag: A                        # Experiment A (spec section Q)
+  output_dir: outputs/experiments
+  seed: 42
+  deterministic: false
+
+model:
+  weights: yolo26n-depth.pt
+  cfg: yolo26n-depth.yaml
+  task: depth
+
+data:
+  yaml: configs/data/sunrgbd.yaml
+  max_depth: 10.0
+  min_depth: 0.001
+
+train:
+  epochs: 100
+  batch: 16
+  imgsz: 640
+  device: 0
+  workers: 8
+  optimizer: AdamW
+  lr0: 0.001
+  lrf: 0.01
+  weight_decay: 0.0005
+  warmup_epochs: 3.0
+  cos_lr: true
+  patience: 25
+  amp: true
+  freeze: null
+  val: true
+  plots: true
+  save_period: -1
+
+loss:
+  dlog: 1.0
+  dgrad: 0.5
+  dlam: 1.0
+
+augment:
+  mosaic: 0.0
+  mixup: 0.0
+  copy_paste: 0.0
+  fliplr: 0.5
+  flipud: 0.0
+  degrees: 0.0
+  translate: 0.05
+  scale: 0.2
+  shear: 0.0
+  perspective: 0.0
+  hsv_h: 0.015
+  hsv_s: 0.4
+  hsv_v: 0.4

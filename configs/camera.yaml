@@ -1,0 +1,41 @@
+# ============================================================
+# CAMERA INTRINSICS  (spec sections T, U)
+# ============================================================
+# Produced by:  python calibration/camera_calibration.py --output configs/camera.yaml
+#
+# ==========  VALUES BELOW ARE NOT MEASURED  ==========
+# They are NOT a calibration of any real camera. Until you run the calibration
+# script on YOUR camera, Euclidean-distance output is geometrically meaningless.
+# The pipeline therefore treats `calibrated: false` as a hard signal and will
+# refuse to report Euclidean distance unless `allow_uncalibrated: true`.
+#
+# The placeholders are a plain pinhole guess for a 640x480 sensor with a 60 deg
+# horizontal FOV: fx = (W/2) / tan(HFOV/2) = 320 / tan(30 deg) = 554.26.
+# ============================================================
+
+calibrated: false               # set to true ONLY by the calibration script
+allow_uncalibrated: false       # true = permit Euclidean output from placeholders (research only)
+
+# Resolution the intrinsics were measured at. Intrinsics scale linearly with
+# resize, which intrinsics.py handles via scale_intrinsics().
+image_width: 640
+image_height: 480
+
+# Pinhole intrinsic matrix K = [[fx, 0, cx], [0, fy, cy], [0, 0, 1]]
+fx: 554.26                      # NOT MEASURED — placeholder
+fy: 554.26                      # NOT MEASURED — placeholder
+cx: 320.0                       # NOT MEASURED — placeholder (assumes principal point at centre)
+cy: 240.0                       # NOT MEASURED — placeholder
+
+# Brown-Conrady distortion [k1, k2, p1, p2, k3]
+distortion: [0.0, 0.0, 0.0, 0.0, 0.0]   # NOT MEASURED — placeholder (zero distortion)
+
+# Calibration provenance, filled in by camera_calibration.py
+calibration_meta:
+  date: null
+  pattern: null                 # 'checkerboard' | 'charuco'
+  pattern_size: null            # inner corners, e.g. [9, 6]
+  square_size_m: null
+  num_images: null
+  reprojection_error_px: null   # RMS; < 0.5 px is a good calibration
+  camera_model: null

@@ -1,0 +1,74 @@
+# Model weights / exports
+*.pt
+*.pth
+*.onnx
+*.engine
+*.torchscript
+*.tflite
+*.mlpackage
+
+# Media
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# Archives
+*.zip
+*.tar
+*.gz
+*.7z
+
+# Data & experiment outputs (never commit)
+datasets/sunrgbd/
+datasets/depth8-png/
+datasets/*-png/
+datasets/depth-*/
+# Exclude contents but keep the tracked placeholder: git cannot descend into a
+# fully-excluded directory, so a bare `outputs/` would make `!outputs/.gitkeep` dead.
+outputs/*
+runs/
+wandb/
+mlruns/
+.optuna/
+*.db
+*.db-journal
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+.coverage
+htmlcov/
+
+# Secrets / local env
+.env
+.env.*
+*.pem
+*.key
+credentials.json
+secrets.yaml
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Keep placeholders
+!outputs/.gitkeep
+!.gitkeep

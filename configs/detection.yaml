@@ -1,0 +1,66 @@
+# ============================================================
+# OBSTACLE DETECTION — YOLO26n  (spec sections A, BB)
+# ============================================================
+# Run:  python training/train_detection.py --config configs/detection.yaml
+#
+# CLASS POLICY (spec section A): the system performs obstacle DETECTION, not
+# object RECOGNITION. There is exactly one class:
+#     0: obstacle
+# No 'chair', 'table', 'person', 'door', 'bed' — every detected object is an
+# obstacle and is treated identically by the navigation layer.
+# ============================================================
+
+experiment:
+  name: detector_yolo26n_obstacle
+  output_dir: outputs/experiments
+  seed: 42
+  deterministic: false
+
+model:
+  weights: yolo26n.pt           # COCO-80 pretrained; fine-tuned down to nc=1
+  cfg: yolo26.yaml
+  task: detect
+
+data:
+  # Written by datasets/scripts/convert_to_obstacle_dataset.py.
+  # NOTE: this file only exists once you have supplied real annotations. No
+  # bounding boxes are ever fabricated (spec section C).
+  yaml: configs/data/obstacle.yaml
+  nc: 1
+  names:
+    0: obstacle
+
+train:
+  epochs: 100
+  batch: 16
+  imgsz: 640
+  device: 0
+  workers: 8
+  optimizer: AdamW
+  lr0: 0.001
+  lrf: 0.01
+  weight_decay: 0.0005
+  warmup_epochs: 3.0
+  cos_lr: true
+  patience: 25
+  amp: true
+  val: true
+  plots: true
+  single_cls: true              # hard guarantee that nc collapses to 1
+
+augment:
+  mosaic: 1.0                   # safe here: detection has no depth pairing
+  mixup: 0.0
+  copy_paste: 0.0
+  fliplr: 0.5
+  degrees: 0.0
+  scale: 0.5
+
+predict:
+  conf: 0.25
+  iou: 0.45
+  max_det: 100
+  # Zero-training alternative to fine-tuning: run the COCO-80 checkpoint and
+  # relabel EVERY detection as 'obstacle'. Enabled by default so the pipeline is
+  # runnable before any obstacle annotations exist.
+  class_agnostic_fallback: true

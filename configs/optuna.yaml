@@ -1,0 +1,156 @@
+# ============================================================
+# HYPERPARAMETER OPTIMIZATION — Optuna  (spec section P)
+# ============================================================
+# Run:  python tuning/optuna_study.py --config configs/optuna.yaml
+#
+# The optimizer library is OPTUNA. (The spec explicitly warns against confusing
+# "Opus" — a language model — with an optimizer. Optuna is the TPE-based
+# hyperparameter search framework used here.)
+# ============================================================
+
+study:
+  name: kd_depth_search
+  # SQLite storage makes the study resumable: re-running the same command
+  # continues from the completed trials instead of restarting (spec section P).
+  storage: sqlite:///outputs/optuna/kd_depth_search.db
+  direction: maximize           # composite score, higher is better
+  n_trials: 50
+  timeout_s: null               # wall-clock cap for the whole study
+  seed: 42
+  load_if_exists: true
+
+sampler:
+  name: TPESampler              # TPESampler | RandomSampler | CmaEsSampler
+  n_startup_trials: 10          # random exploration before the TPE model kicks in
+  multivariate: true            # models parameter interactions (lambdas interact strongly)
+
+pruner:
+  name: MedianPruner            # MedianPruner | HyperbandPruner | NopPruner
+  n_startup_trials: 5
+  n_warmup_steps: 5             # epochs before a trial may be pruned
+  interval_steps: 1
+
+# Short proxy training runs; the winning config is then retrained to full length.
+trial:
+  epochs: 15
+  imgsz: 640
+  device: 0
+  workers: 8
+  # Fraction of the training set used per trial. < 1.0 speeds up the search at
+  # the cost of a noisier objective; the final retrain always uses 1.0.
+  data_fraction: 0.3
+  base_config: configs/distillation.yaml
+
+# ------------------------------------------------------------
+# Search space (spec section P). Each entry: type + bounds.
+# ------------------------------------------------------------
+search_space:
+  learning_rate:
+    type: float
+    low: 1.0e-5
+    high: 5.0e-3
+    log: true
+  weight_decay:
+    type: float
+    low: 1.0e-6
+    high: 1.0e-2
+    log: true
+  batch_size:
+    type: categorical
+    choices: [8, 16, 32]
+  optimizer:
+    type: categorical
+    choices: [AdamW, Adam, SGD]
+
+  # KD loss weights (spec section O). The listed defaults are a STARTING POINT
+  # and are explicitly not assumed optimal.
+  lambda_gt:
+    type: float
+    low: 0.5
+    high: 2.0
+  lambda_depth:
+    type: float
+    low: 0.0
+    high: 2.0
+  lambda_feature:
+    type: float
+    low: 0.0
+    high: 1.0
+  lambda_boundary:
+    type: float
+    low: 0.0
+    high: 1.0
+  lambda_relative:
+    type: float
+    low: 0.0
+    high: 1.0
+  lambda_roi:
+    type: float
+    low: 0.0
+    high: 1.0
+
+  # Loss-form choices
+  depth_loss_type:
+    type: categorical
+    choices: [l1, smooth_l1, berhu]
+  feature_loss_type:
+    type: categorical
+    choices: [mse, smooth_l1, cosine]
+
+  # ROI emphasis on obstacle pixels
+  roi_alpha:
+    type: float
+    low: 1.0
+    high: 6.0
+
+  # Temperature for the relative-depth ranking term. Kept in the space because
+  # section P requires it "if used"; it only affects kd.relative.
+  temperature:
+    type: float
+    low: 0.5
+    high: 4.0
+
+# ------------------------------------------------------------
+# Composite objective (spec section P)
+# ------------------------------------------------------------
+# score = w_absrel * n(AbsRel) + w_rmse * n(RMSE) + w_delta1 * n(delta1)
+#         - w_latency * n(latency)
+#
+# RATIONALE
+#   Why composite: a wheelchair is an EMBEDDED, SAFETY-CRITICAL system. A
+#   student that wins on AbsRel but misses the real-time budget is useless, and
+#   a fast student with poor absolute depth produces unsafe distances. Neither
+#   accuracy nor latency alone can express that trade-off, so the objective must
+#   carry both.
+#   Why these weights: delta1 carries the largest accuracy weight because it is
+#   the standard headline metric and is bounded in [0,1], which makes it stable
+#   to normalize. AbsRel and RMSE are error terms (lower is better) and are
+#   sign-flipped by the normalizer. Latency is SUBTRACTED, not constrained, so
+#   the search can still explore accurate-but-slow regions instead of hard-
+#   failing them; the hard budget is enforced separately by max_latency_ms.
+#   Why metric mode: metrics are computed with align='none'. Median alignment
+#   would hide exactly the absolute-scale error this research is about — in the
+#   session audit, alignment inflated delta1 from 0.231 to 0.798 on the same
+#   model.
+objective:
+  align: none                   # 'none' = metric evaluation (spec section S, MODE 1)
+  weights:
+    absrel: 0.25
+    rmse: 0.15
+    delta1: 0.40
+    latency: 0.20
+  # Min-max normalization reference ranges. Values outside are clamped, so a
+  # single catastrophic trial cannot dominate the scale.
+  normalization:
+    absrel: [0.0, 0.5]          # lower is better
+    rmse: [0.0, 2.0]            # lower is better, metres
+    delta1: [0.0, 1.0]          # higher is better
+    latency_ms: [0.0, 200.0]    # lower is better
+  # Hard constraint: trials exceeding this are reported as failed, keeping the
+  # search inside the real-time envelope.
+  max_latency_ms: 100.0
+  # Device the latency term is measured on. Latency is hardware-dependent, so
+  # this is recorded with every trial for reproducibility.
+  latency_device: cuda:0
+  latency_runs: 50
+  latency_warmup: 10

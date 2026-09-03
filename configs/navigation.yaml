@@ -1,0 +1,120 @@
+# ============================================================
+# NAVIGATION — ROI, sectors, safety, hysteresis
+# (spec sections V, W, X, Y, Z, AA, AB, AC, AD, AE)
+# ============================================================
+
+# --- W. Global navigation ROI (central 60% of the horizontal FOV) ---
+roi:
+  width_ratio: 0.60             # x in [0.20W, 0.80W] when centred
+  x_center: 0.50
+  height_ratio: 1.0             # full frame height by default
+  y_center: 0.50
+  # Obstacles outside the ROI are EXCLUDED from the free-path decision but are
+  # still returned for visualization (spec section W).
+  draw_outside_roi: true
+
+# --- V. Per-bounding-box depth ROI (inner 60%, independent of the global ROI) ---
+bbox_roi:
+  inner_ratio: 0.60             # keeps the central 60% -> 20% inset per side
+  # Guarantees a usable patch for very small boxes; the inner ROI is never
+  # allowed to collapse below this many pixels per side.
+  min_size_px: 4
+
+# --- X. Robust depth statistics inside the bbox ROI ---
+depth_stats:
+  statistic: median             # median | mean | percentile — median is the default (outlier-robust)
+  percentile: 25.0              # used only when statistic == 'percentile'; low = conservative (nearer)
+  min_depth_m: 0.1              # below this the reading is treated as sensor noise
+  max_depth_m: 10.0             # SUN RGB-D sensor saturation
+  # Percentile clipping applied to the valid depths before the statistic.
+  clip_lower_percentile: 5.0
+  clip_upper_percentile: 95.0
+  # Fraction of ROI pixels that must be valid, else distance = INVALID and the
+  # obstacle is handled conservatively (spec section X).
+  min_valid_ratio: 0.30
+
+# --- Z. Five sectors across the global ROI ---
+sectors:
+  names: [FL, L, CTR, R, FR]    # visual order, left to right
+  # Fractional widths within the global ROI; must sum to 1.0.
+  widths: [0.20, 0.20, 0.20, 0.20, 0.20]
+  # 'overlap' assigns an obstacle to every sector its bbox overlaps (conservative,
+  # recommended for safety). 'center' assigns by bbox horizontal centre only.
+  assignment: overlap
+  # Minimum fraction of a sector's width that a bbox must cover to occupy it.
+  min_overlap_ratio: 0.05
+
+# --- AA. Obstacle threshold ---
+safety:
+  # RESEARCH PARAMETER, NOT a validated clinical value. 1.0 m follows the
+  # prototype; it MUST be re-validated experimentally on the real wheelchair
+  # against its braking distance and speed (spec section AA).
+  safety_distance_m: 1.0
+  # Distance basis for the blocked test: 'axial' = camera-axis depth Z,
+  # 'euclidean' = sqrt(X^2+Y^2+Z^2). Axial is the correct choice for forward
+  # clearance; euclidean is reported alongside it (spec section T).
+  distance_mode: axial
+  # An obstacle whose depth is INVALID blocks its sector when true (fail-safe).
+  invalid_depth_blocks: true
+  # Detections below this confidence are ignored entirely.
+  min_detection_confidence: 0.25
+  # Obstacles whose fused confidence score is below this are treated as blocking
+  # rather than discarded (conservative under uncertainty).
+  low_confidence_blocks: true
+  min_confidence_score: 0.20
+
+# --- AB. Free-path policy ---
+free_path:
+  # Evaluated in order; the first free sector wins.
+  priority: [CTR, L, R, FL, FR]
+  commands:
+    CTR: FORWARD
+    L: TURN_LEFT
+    R: TURN_RIGHT
+    FL: TURN_LEFT
+    FR: TURN_RIGHT
+  all_blocked_command: STOP
+
+# --- AC. Majority-vote hysteresis ---
+hysteresis:
+  enabled: true
+  window: 3                     # N = 3 frames
+  # With no strict majority the fail-safe default for a wheelchair is STOP.
+  # Setting this to true instead holds the previous safe command and is NOT
+  # recommended for deployment (spec section AC).
+  hold_previous_on_tie: false
+  tie_command: STOP
+  # Until the window has filled, emit STOP rather than an under-supported command.
+  warmup_command: STOP
+
+# --- AD/AE. Temporal safety and emergency stop ---
+temporal_safety:
+  enabled: true
+  max_frame_age_s: 0.5          # stale frame -> STOP
+  max_inference_latency_s: 0.5  # inference timeout -> STOP
+  # A jump larger than this between consecutive frames for the same sector is
+  # treated as a depth discontinuity and handled conservatively.
+  max_depth_jump_m: 2.0
+  # Consecutive failures tolerated before latching EMERGENCY_STOP.
+  max_consecutive_failures: 3
+  # EMERGENCY_STOP latches and requires an explicit reset() call to clear.
+  latch_emergency_stop: true
+
+# --- BB. Detection ---
+detection:
+  weights: yolo26n.pt
+  conf: 0.25                    # starting point, not a tuned optimum (spec section BB)
+  iou: 0.45
+  max_det: 100
+  imgsz: 640
+  # The official yolo26n.pt is COCO-80. 'class_agnostic' collapses EVERY detected
+  # class to the single label 'obstacle' (spec section A) with no retraining.
+  # Set false only when using a genuinely nc=1 obstacle-trained checkpoint.
+  class_agnostic: true
+  label: obstacle
+
+# --- Depth model used by the navigation pipeline ---
+depth:
+  weights: outputs/checkpoints/student_distilled_best.pt
+  fallback_weights: yolo26n-depth.pt
+  imgsz: 640

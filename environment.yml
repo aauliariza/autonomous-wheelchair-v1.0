@@ -1,0 +1,17 @@
+# Conda environment for Autonomous Wheelchair v1.0
+#
+# Usage:
+#   conda env create -f environment.yml
+#   conda activate wheelchair
+#
+# NOTE: this file installs the CPU/CUDA-agnostic PyPI wheels. For a specific
+# CUDA build, install torch separately from https://pytorch.org/get-started/locally/
+# BEFORE running `pip install -r requirements.txt`.
+name: wheelchair
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip>=24.0
+  - pip:
+      - -r requirements.txt

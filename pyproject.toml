@@ -1,0 +1,80 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autonomous-wheelchair"
+version = "1.0.0"
+description = "Knowledge-Distilled Lightweight Metric Monocular Depth Estimation and Obstacle-Aware Free-Path Selection for Autonomous Indoor Smart Wheelchair Navigation"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+keywords = [
+    "monocular-depth-estimation",
+    "knowledge-distillation",
+    "yolo26",
+    "autonomous-navigation",
+    "assistive-robotics",
+    "edge-ai",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dynamic = ["dependencies"]
+
+[project.urls]
+Repository = "https://github.com/aauliariza/autonomous-wheelchair-v1.0"
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools]
+packages = [
+    "calibration",
+    "distillation",
+    "evaluation",
+    "inference",
+    "models",
+    "navigation",
+    "utils",
+    "visualization",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "needs_weights: requires downloadable YOLO26 checkpoints (network access)",
+    "needs_dataset: requires a prepared depth dataset on disk",
+]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+exclude = [".git", "__pycache__", "outputs", "datasets", "runs", "notebooks"]
+
+[tool.ruff.lint]
+# E/W pycodestyle, F pyflakes, I isort, B bugbear, C4 comprehensions,
+# UP pyupgrade, SIM simplify, RET returns
+select = ["E", "W", "F", "I", "B", "C4", "UP", "SIM", "RET"]
+ignore = [
+    "E501",    # line length handled by formatter
+    "B008",    # function call in default argument
+    "SIM108",  # ternary not always clearer
+    "RET504",  # named return variables aid readability
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B018"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

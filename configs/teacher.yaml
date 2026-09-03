@@ -1,0 +1,79 @@
+# ============================================================
+# TEACHER — YOLO26x-Depth  (spec section F)
+# ============================================================
+# Fine-tunes the official YOLO26x-Depth checkpoint on SUN RGB-D.
+# Run:  python training/train_teacher.py --config configs/teacher.yaml
+#
+# VERIFIED (session audit, ultralytics 8.4.138):
+#   yolo26x-depth.pt  ->  57,022,241 parameters
+#   KD feature layers [16, 19, 22] -> channels (384, 768, 768)
+#   Head output resolution = input / 4
+# ============================================================
+
+experiment:
+  name: teacher_yolo26x_depth
+  tag: F                        # Experiment F in the ablation table (spec section Q)
+  output_dir: outputs/experiments
+  seed: 42
+  deterministic: false          # see utils/seed.py for the speed trade-off
+
+model:
+  # Official Ultralytics checkpoint; auto-downloads on first use.
+  weights: yolo26x-depth.pt
+  # Architecture YAML, used only when weights are absent (training from scratch).
+  cfg: yolo26x-depth.yaml
+  task: depth
+
+data:
+  # Written by datasets/scripts/prepare_sunrgbd.py (official split by default).
+  yaml: configs/data/sunrgbd.yaml
+  max_depth: 10.0               # SUN RGB-D sensors saturate ~10 m; used by the Eigen mask
+  min_depth: 0.001
+
+train:
+  epochs: 100
+  batch: 8                      # x-scale at 640 needs ~24 GB VRAM; lower if OOM
+  imgsz: 640
+  device: 0                     # '0' | '0,1' | 'cpu'
+  workers: 8
+  optimizer: AdamW              # 'auto' lets Ultralytics choose
+  lr0: 0.0005
+  lrf: 0.01
+  weight_decay: 0.0005
+  warmup_epochs: 3.0
+  cos_lr: true
+  patience: 25
+  amp: true                     # mixed precision; ignored on CPU
+  freeze: null                  # e.g. 10 to freeze the backbone
+  val: true
+  plots: true
+  save_period: -1
+
+# Ultralytics DepthLoss26 gains (VERIFIED names from cfg/default.yaml).
+loss:
+  dlog: 1.0                     # SILog weight
+  dgrad: 0.5                    # multi-scale gradient-matching weight
+  dlam: 1.0                     # 1.0 = scale-invariant, 0.0 = log-RMSE
+  # NOTE: dlam=1.0 makes the GT loss fully SCALE-INVARIANT. Absolute metric
+  # scale then comes only from post-training log-affine calibration
+  # (cal_a/cal_b). To push the network itself toward metric output, lower dlam
+  # (e.g. 0.85). See docs/depth_to_distance.md.
+
+augment:
+  # Ultralytics applies every geometric op to the paired depth map with
+  # INTER_NEAREST (VERIFIED in data/augment.py apply_depth hooks), so RGB-depth
+  # correspondence is preserved. Mosaic/mixup are disabled: they composite
+  # multiple scenes into one frame, which is meaningless for metric depth.
+  mosaic: 0.0
+  mixup: 0.0
+  copy_paste: 0.0
+  fliplr: 0.5
+  flipud: 0.0
+  degrees: 0.0
+  translate: 0.05
+  scale: 0.2
+  shear: 0.0
+  perspective: 0.0
+  hsv_h: 0.015                  # photometric only — does not affect depth
+  hsv_s: 0.4
+  hsv_v: 0.4

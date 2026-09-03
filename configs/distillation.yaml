@@ -1,0 +1,154 @@
+# ============================================================
+# KNOWLEDGE DISTILLATION — YOLO26x-Depth  ->  YOLO26n-Depth
+# (spec sections H-O)
+# ============================================================
+# Run:  python training/train_distillation.py --config configs/distillation.yaml
+#
+# EXPERIMENT SELECTION (spec section Q): toggle kd.<term>.enabled to reproduce
+# each ablation row without editing any source file.
+#   A  baseline .............. all KD terms disabled (use configs/student.yaml)
+#   B  + output KD ........... depth
+#   C  + feature KD .......... depth, feature
+#   D  + boundary KD ......... depth, feature, boundary
+#   E  complete proposed KD .. depth, feature, boundary, relative, roi   <-- this file
+#   F  teacher ............... configs/teacher.yaml
+# ============================================================
+
+experiment:
+  name: student_distilled_full
+  tag: E
+  output_dir: outputs/experiments
+  seed: 42
+  deterministic: false
+
+teacher:
+  # Fine-tuned teacher from STEP 7. Falls back to the official checkpoint when absent.
+  weights: outputs/checkpoints/teacher_best.pt
+  fallback_weights: yolo26x-depth.pt
+  cfg: yolo26x-depth.yaml
+  # Teacher is frozen: eval() + requires_grad=False + torch.no_grad() (spec section F).
+  freeze: true
+
+student:
+  weights: yolo26n-depth.pt
+  cfg: yolo26n-depth.yaml
+  # CRITICAL (VERIFIED in audit): Ultralytics loads .pt checkpoints with
+  # requires_grad=False on every parameter. The KD trainer re-enables them
+  # explicitly; without that the student receives ZERO gradients silently.
+  unfreeze_on_load: true
+
+data:
+  yaml: configs/data/sunrgbd.yaml
+  max_depth: 10.0
+  min_depth: 0.001
+
+train:
+  epochs: 100
+  batch: 16
+  imgsz: 640
+  device: 0
+  workers: 8
+  optimizer: AdamW
+  lr0: 0.001
+  lrf: 0.01
+  weight_decay: 0.0005
+  warmup_epochs: 3.0
+  cos_lr: true
+  patience: 25
+  amp: true
+  val: true
+  plots: true
+
+# ------------------------------------------------------------
+# Teacher/student output space (VERIFIED audit finding)
+# ------------------------------------------------------------
+# The Depth head behaves DIFFERENTLY in train and eval mode:
+#   train(): returns dict{"depth"}  -- calibration NOT applied
+#   eval():  returns tensor         -- calibration IS applied as d^cal_a * exp(cal_b)
+# Released checkpoints are not scale-identity (measured: student cal_b=-0.1938,
+# teacher cal_b=-0.3167), so a naive teacher-eval -> student-train comparison
+# distills across two different scale spaces.
+#
+#   calibrated : teacher output keeps its fitted calibration. The student is
+#                pulled toward the teacher's METRIC scale, which is desirable
+#                here because the GT SILog loss is scale-invariant and supplies
+#                no absolute scale of its own.  <-- default
+#   raw        : teacher calibration is reset to identity for the KD forward,
+#                distilling pure relative structure only.
+teacher_space: calibrated
+
+# ------------------------------------------------------------
+# KD terms (spec section O). L_total = sum(lambda_i * L_i)
+# ------------------------------------------------------------
+# Ground-truth supervision is MANDATORY and cannot be disabled: the teacher must
+# never become the only source of supervision (spec section O).
+kd:
+  gt:
+    enabled: true               # enforced true by the trainer; listed for clarity
+    lambda: 1.0
+
+  # --- I. Depth-output distillation ---
+  depth:
+    enabled: true
+    lambda: 0.5
+    loss_type: smooth_l1        # l1 | smooth_l1 | berhu
+    beta: 0.1                   # SmoothL1 transition point
+    berhu_threshold: 0.2        # BerHu c = threshold * max|residual|
+    log_space: true             # distill in log-depth (spec section J).
+                                # The head is internally log-depth but Ultralytics
+                                # already applies exp(); we re-take log() rather
+                                # than touching raw head activations.
+    epsilon: 1.0e-6
+    mask_invalid_gt: true       # never distill where GT is invalid (spec section I)
+
+  # --- K. Feature distillation ---
+  feature:
+    enabled: true
+    lambda: 0.2
+    # VERIFIED by model introspection (head.f), NOT guessed:
+    #   teacher yolo26x-depth layers [16,19,22] -> (384, 768, 768) ch
+    #   student yolo26n-depth layers [16,19,22] -> ( 64, 128, 256) ch
+    # Spatial dims are IDENTICAL at every level, so no resampling is needed.
+    teacher_layers: [16, 19, 22]
+    student_layers: [16, 19, 22]
+    loss_type: mse              # mse | smooth_l1 | cosine
+    # 'teacher_to_student' projects P(F_T) -> shape(F_S)  (spec section K).
+    # 'student_to_teacher' lifts the student into the teacher's wider space,
+    # which avoids compressing teacher information but adds more parameters.
+    projection_direction: teacher_to_student
+    normalize: true             # per-channel L2 norm before the distance
+    # Optional projection-free variant: both models' head.proj map every level
+    # to 256 channels, so features can be compared with no learned projection.
+    use_head_projection: false
+
+  # --- L. Structural / boundary distillation ---
+  boundary:
+    enabled: true
+    lambda: 0.1
+    loss_type: smooth_l1
+    beta: 0.1
+    log_space: true             # gradients of log-depth are scale-invariant
+    mask_invalid_gt: true
+
+  # --- M. Relative-depth distillation ---
+  relative:
+    enabled: true
+    lambda: 0.1
+    num_pairs: 4096             # sampled pairs per image (bounded, spec section M)
+    margin: 0.0                 # ranking-loss margin in log space
+    tolerance: 0.03             # |log ratio| below this is treated as "equal depth"
+    loss_type: ranking          # ranking | pairwise_l1
+
+  # --- N. Obstacle-aware / ROI-aware distillation ---
+  roi:
+    enabled: true
+    lambda: 0.2
+    alpha: 3.0                  # weight on obstacle pixels; background stays 1.0
+    # Boxes come from the YOLO26n obstacle detector run online over the batch.
+    detector_weights: yolo26n.pt
+    conf: 0.25
+    max_det: 50
+    inner_ratio: 0.6            # BBOX_DEPTH_ROI: central 60% of each box
+    # Cache detections after the first epoch (boxes do not change with the
+    # student's weights, so re-running the detector every epoch is wasted compute).
+    cache_detections: true
