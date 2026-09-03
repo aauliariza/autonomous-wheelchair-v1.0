@@ -57,10 +57,10 @@ class CameraIntrinsics:
 
     Examples:
         >>> K = CameraIntrinsics(554.26, 554.26, 320.0, 240.0, 640, 480)
-        >>> round(K.euclidean_from_axial(1.0, 320.0, 240.0), 6)   # principal point
+        >>> round(float(K.euclidean_from_axial(1.0, 320.0, 240.0)), 6)   # principal point
         1.0
-        >>> round(K.euclidean_from_axial(1.0, 0.0, 0.0), 4)       # corner: slant > axial
-        1.1417
+        >>> round(float(K.euclidean_from_axial(1.0, 0.0, 0.0)), 4)       # corner: slant exceeds axial
+        1.2332
     """
 
     def __init__(
