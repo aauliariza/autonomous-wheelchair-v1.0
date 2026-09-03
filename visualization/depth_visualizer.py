@@ -69,5 +69,7 @@ def depth_legend(image: np.ndarray, min_depth: float, max_depth: float, width: i
     bar = cv2.applyColorMap((np.repeat(bar, width, axis=1) * 255).astype(np.uint8), cv2.COLORMAP_INFERNO)
     out = np.hstack([image, bar])
     cv2.putText(out, f"{max_depth:.1f}m", (image.shape[1] - 44, 14), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
-    cv2.putText(out, f"{min_depth:.1f}m", (image.shape[1] - 44, h - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+    cv2.putText(
+        out, f"{min_depth:.1f}m", (image.shape[1] - 44, h - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1
+    )
     return out

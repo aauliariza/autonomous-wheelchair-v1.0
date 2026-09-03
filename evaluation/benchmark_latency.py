@@ -23,7 +23,6 @@ import argparse
 import sys
 import time
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
@@ -110,7 +109,9 @@ def main(argv: list[str] | None = None) -> int:
         fusion = ObstacleFusion(nav_cfg)
         selector = FreePathSelector(nav_cfg)
 
-        stages: dict[str, list[float]] = {k: [] for k in ("detection", "depth", "fusion", "distance", "free_path", "total")}
+        stages: dict[str, list[float]] = {
+            k: [] for k in ("detection", "depth", "fusion", "distance", "free_path", "total")
+        }
 
         for i in range(args.runs + args.warmup):
             t_all = time.perf_counter()
@@ -131,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
             # Fusion covers detection-depth association AND distance estimation;
             # they are reported together and the distance share is timed inside.
             t = time.perf_counter()
-            obstacles = fusion.fuse(boxes, confs, np.squeeze(dmap), sector_map, image_size=frame.shape[:2])
+            fusion.fuse(boxes, confs, np.squeeze(dmap), sector_map, image_size=frame.shape[:2])
             t_fuse = (time.perf_counter() - t) * 1000
 
             t = time.perf_counter()
@@ -155,8 +156,10 @@ def main(argv: list[str] | None = None) -> int:
         print("-" * 68)
         for name, s in summary.items():
             if "mean_ms" in s:
-                print(f"{name:<14}{s['mean_ms']:>10.2f}{s['median_ms']:>10.2f}{s['p95_ms']:>10.2f}"
-                      f"{s['p99_ms']:>10.2f}{s['max_ms']:>10.2f}")
+                print(
+                    f"{name:<14}{s['mean_ms']:>10.2f}{s['median_ms']:>10.2f}{s['p95_ms']:>10.2f}"
+                    f"{s['p99_ms']:>10.2f}{s['max_ms']:>10.2f}"
+                )
         print("-" * 68)
         total = summary["total"]
         if "mean_ms" in total:

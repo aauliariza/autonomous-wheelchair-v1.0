@@ -77,14 +77,22 @@ def draw_navigation_overlay(
     # Right-align the ROI caption: the telemetry panel occupies the top-left.
     roi_label = "60% NAV ROI"
     (rw, _), _ = cv2.getTextSize(roi_label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
-    cv2.putText(out, roi_label, (max(roi.x1 + 4, roi.x2 - rw - 6), max(16, roi.y1 + 16)),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.45, COLOR_ROI, 1, cv2.LINE_AA)
+    cv2.putText(
+        out,
+        roi_label,
+        (max(roi.x1 + 4, roi.x2 - rw - 6), max(16, roi.y1 + 16)),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.45,
+        COLOR_ROI,
+        1,
+        cv2.LINE_AA,
+    )
 
     # --- sectors ---
     # Vertical budget, bottom-up: command banner | distance labels | sector band.
     # Laid out explicitly so the banner never covers the per-sector distances.
-    command_strip = 40          # reserved for the command banner
-    distance_strip = 20         # reserved for per-sector distance labels
+    command_strip = 40  # reserved for the command banner
+    distance_strip = 20  # reserved for per-sector distance labels
     band_bottom = min(roi.y2, h - command_strip - distance_strip)
     band_top = max(roi.y1, band_bottom - 46)
 
@@ -95,9 +103,7 @@ def draw_navigation_overlay(
         # Tint the sector band so occupancy reads at a glance.
         sub = out[band_top:band_bottom, r.x1 : r.x2]
         if sub.size:
-            out[band_top:band_bottom, r.x1 : r.x2] = cv2.addWeighted(
-                sub, 0.65, np.full_like(sub, color), 0.35, 0
-            )
+            out[band_top:band_bottom, r.x1 : r.x2] = cv2.addWeighted(sub, 0.65, np.full_like(sub, color), 0.35, 0)
 
         cv2.rectangle(out, (r.x1, band_top), (r.x2 - 1, band_bottom), color, 1)
         cv2.line(out, (r.x1, roi.y1), (r.x1, min(roi.y2, h) - 1), color, 1, cv2.LINE_AA)
@@ -105,14 +111,16 @@ def draw_navigation_overlay(
         cx = (r.x1 + r.x2) // 2
         (tw, tht), _ = cv2.getTextSize(sector.name, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
         _panel(out, cx - tw // 2 - 4, band_top - tht - 10, cx + tw // 2 + 4, band_top - 2, alpha=0.5)
-        cv2.putText(out, sector.name, (cx - tw // 2, band_top - 6),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2, cv2.LINE_AA)
+        cv2.putText(
+            out, sector.name, (cx - tw // 2, band_top - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2, cv2.LINE_AA
+        )
 
         # Measured nearest distance, or "--" when nothing valid was seen.
         text = f"{sector.min_distance_m:.2f}m" if sector.min_distance_m is not None else "--"
         (tw2, _), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.42, 1)
-        cv2.putText(out, text, (cx - tw2 // 2, band_bottom + 15),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, COLOR_TEXT, 1, cv2.LINE_AA)
+        cv2.putText(
+            out, text, (cx - tw2 // 2, band_bottom + 15), cv2.FONT_HERSHEY_SIMPLEX, 0.42, COLOR_TEXT, 1, cv2.LINE_AA
+        )
 
     # --- telemetry panel ---
     lines = [f"obstacles: {num_obstacles}", f"safety dist: {safety_distance_m:.2f} m"]

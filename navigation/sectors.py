@@ -129,7 +129,7 @@ class SectorMap:
         span = self.roi.width
         cursor = float(self.roi.x1)
 
-        for i, (name, frac) in enumerate(zip(self.names, self.widths)):
+        for i, (name, frac) in enumerate(zip(self.names, self.widths, strict=True)):
             x1 = int(round(cursor))
             cursor += span * frac
             # The final sector is pinned to the ROI edge so cumulative rounding

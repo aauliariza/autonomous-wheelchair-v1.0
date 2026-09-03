@@ -80,7 +80,9 @@ def distance_metrics(pred: np.ndarray, gt: np.ndarray) -> dict[str, Any]:
     }
 
 
-def synthetic_boxes(gt_depth: np.ndarray, grid: int = 3, margin: float = 0.15) -> list[tuple[float, float, float, float]]:
+def synthetic_boxes(
+    gt_depth: np.ndarray, grid: int = 3, margin: float = 0.15
+) -> list[tuple[float, float, float, float]]:
     """Generate a deterministic grid of evaluation regions.
 
     Used when no obstacle annotations exist. These are EVALUATION REGIONS, not
@@ -157,8 +159,12 @@ def main(argv: list[str] | None = None) -> int:
 
         preds: list[float] = []
         gts: list[float] = []
-        LOG.info("Evaluating %d image(s) | distance_mode=%s | source=%s",
-                 len(pairs), mode, "detector" if detector else "grid regions")
+        LOG.info(
+            "Evaluating %d image(s) | distance_mode=%s | source=%s",
+            len(pairs),
+            mode,
+            "detector" if detector else "grid regions",
+        )
 
         for img_path, dep_path in pairs:
             raw = cv2.imread(str(dep_path), cv2.IMREAD_ANYDEPTH)

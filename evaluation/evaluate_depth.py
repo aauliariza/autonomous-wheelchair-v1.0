@@ -41,9 +41,7 @@ def load_pairs(data_yaml: Path, split: str) -> list[tuple[Path, Path]]:
     dep_dir = Path(str(img_dir).replace("/images/", "/depth/"))
 
     if not img_dir.exists():
-        raise FileNotFoundError(
-            f"Split directory not found: {img_dir}\n  Recovery: check '{split}' in {data_yaml}."
-        )
+        raise FileNotFoundError(f"Split directory not found: {img_dir}\n  Recovery: check '{split}' in {data_yaml}.")
     if not dep_dir.exists():
         raise FileNotFoundError(
             f"Depth directory not found: {dep_dir}\n"

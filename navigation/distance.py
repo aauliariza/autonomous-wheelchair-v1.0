@@ -114,8 +114,14 @@ def robust_depth_statistics(
 
     if total == 0:
         return {
-            "value": None, "median": None, "min": None, "max": None, "std": None,
-            "num_valid": 0, "num_total": 0, "valid_ratio": 0.0,
+            "value": None,
+            "median": None,
+            "min": None,
+            "max": None,
+            "std": None,
+            "num_valid": 0,
+            "num_total": 0,
+            "valid_ratio": 0.0,
         }
 
     # Reject every invalid case named in the spec in one pass.
@@ -125,8 +131,14 @@ def robust_depth_statistics(
 
     if num_valid == 0:
         return {
-            "value": None, "median": None, "min": None, "max": None, "std": None,
-            "num_valid": 0, "num_total": total, "valid_ratio": 0.0,
+            "value": None,
+            "median": None,
+            "min": None,
+            "max": None,
+            "std": None,
+            "num_valid": 0,
+            "num_total": total,
+            "valid_ratio": 0.0,
         }
 
     # Percentile clipping needs enough samples for the percentiles to mean
@@ -238,7 +250,10 @@ class DistanceEstimator:
             y1, y2 = y1 * sy, y2 * sy
 
         roi: ROI = compute_bbox_inner_roi(
-            x1, y1, x2, y2,
+            x1,
+            y1,
+            x2,
+            y2,
             inner_ratio=self.inner_ratio,
             image_width=dw,
             image_height=dh,

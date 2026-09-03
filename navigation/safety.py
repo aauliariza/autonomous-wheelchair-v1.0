@@ -44,7 +44,7 @@ class SafetyState(str, Enum):
     """Overall health of the perception/planning chain."""
 
     OK = "OK"
-    DEGRADED = "DEGRADED"          # a recoverable fault; commands forced to STOP
+    DEGRADED = "DEGRADED"  # a recoverable fault; commands forced to STOP
     EMERGENCY_STOP = "EMERGENCY_STOP"  # latched; requires reset()
 
     def __str__(self) -> str:

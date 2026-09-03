@@ -97,9 +97,9 @@ class ProjectionBank(nn.Module):
         self.student_channels = list(student_channels)
 
         if direction == "teacher_to_student":
-            pairs = zip(teacher_channels, student_channels)
+            pairs = zip(teacher_channels, student_channels, strict=True)
         else:
-            pairs = zip(student_channels, teacher_channels)
+            pairs = zip(student_channels, teacher_channels, strict=True)
 
         # An identity is used where widths already match, so the projection-free
         # KD point (both heads' proj outputs are 256-ch) costs no parameters.
@@ -134,7 +134,7 @@ class ProjectionBank(nn.Module):
 
         out_t: list[torch.Tensor] = []
         out_s: list[torch.Tensor] = []
-        for proj, ft, fs in zip(self.projections, teacher_feats, student_feats):
+        for proj, ft, fs in zip(self.projections, teacher_feats, student_feats, strict=True):
             if self.direction == "teacher_to_student":
                 # Teacher is frozen: detach so no gradient can reach it, while the
                 # projection itself still trains.

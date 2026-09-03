@@ -88,8 +88,14 @@ def run(args) -> int:
     processed = 0
     t_start = time.perf_counter()
 
-    LOG.info("Processing %s (%dx%d @ %.1f fps, %s frames)", args.source, width, height, fps_in,
-             total if total > 0 else "unknown")
+    LOG.info(
+        "Processing %s (%dx%d @ %.1f fps, %s frames)",
+        args.source,
+        width,
+        height,
+        fps_in,
+        total if total > 0 else "unknown",
+    )
 
     with FrameLogger(csv_path) as flog:
         while True:
@@ -151,8 +157,12 @@ def run(args) -> int:
         cv2.destroyAllWindows()
 
     elapsed = time.perf_counter() - t_start
-    LOG.info("Processed %d frames in %.1fs (%.2f FPS end-to-end)", processed, elapsed,
-             processed / elapsed if elapsed > 0 else 0.0)
+    LOG.info(
+        "Processed %d frames in %.1fs (%.2f FPS end-to-end)",
+        processed,
+        elapsed,
+        processed / elapsed if elapsed > 0 else 0.0,
+    )
     LOG.info("Command distribution: %s", counts)
     LOG.info("Annotated video: %s", out_path)
     LOG.info("Telemetry CSV  : %s", csv_path)

@@ -22,7 +22,6 @@ from pathlib import Path
 from typing import Any
 
 import torch
-import torch.nn as nn
 
 from .feature_hooks import FeatureExtractor, resolve_depth_feature_layers
 from .model_utils import get_calibration, get_depth_head, load_depth_model

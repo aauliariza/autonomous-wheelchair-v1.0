@@ -1,7 +1,7 @@
 """Feature-level distillation (spec section K).
 
 .. math::
-    L_{feature} = \\sum_i \; d\\big(P_i(F_{T_i}),\; F_{S_i}\\big)
+    L_{feature} = \\sum_i \\; d\\big(P_i(F_{T_i}),\\; F_{S_i}\\big)
 
 Intermediate features carry the scene structure the teacher uses to arrive at
 its depth, so matching them transfers more than the output alone: the student is
@@ -96,7 +96,7 @@ class FeatureKDLoss(nn.Module):
             raise ValueError(f"level_weights has {len(weights)} entries for {len(teacher_feats)} levels.")
 
         total = None
-        for w, ft, fs in zip(weights, teacher_feats, student_feats):
+        for w, ft, fs in zip(weights, teacher_feats, student_feats, strict=True):
             if ft.shape != fs.shape:
                 raise ValueError(
                     f"Feature shape mismatch {tuple(ft.shape)} vs {tuple(fs.shape)}. "

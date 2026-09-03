@@ -162,7 +162,7 @@ class ObstacleFusion:
         depth = np.squeeze(np.asarray(depth_map))
         obstacles: list[Obstacle] = []
 
-        for i, (box, conf) in enumerate(zip(boxes, confidences)):
+        for i, (box, conf) in enumerate(zip(boxes, confidences, strict=True)):
             if conf < self.min_detection_confidence:
                 continue
 

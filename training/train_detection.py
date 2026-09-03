@@ -23,7 +23,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from training.common import build_ultralytics_args, export_best_checkpoint, resolve_data_yaml, setup_experiment  # noqa: E402
+from training.common import (  # noqa: E402
+    build_ultralytics_args,
+    export_best_checkpoint,
+    resolve_data_yaml,
+    setup_experiment,
+)
 from utils.io import load_config, load_yaml, merge_overrides, save_json  # noqa: E402
 from utils.logger import get_logger  # noqa: E402
 
@@ -75,7 +80,9 @@ def main(argv: list[str] | None = None) -> int:
         results = model.train(**train_args)
         actual_dir = Path(getattr(results, "save_dir", run_dir))
         metrics = dict(getattr(results, "results_dict", {}) or {})
-        save_json({"role": "detector", "nc": 1, "metrics": metrics, "save_dir": str(actual_dir)}, run_dir / "metrics.json")
+        save_json(
+            {"role": "detector", "nc": 1, "metrics": metrics, "save_dir": str(actual_dir)}, run_dir / "metrics.json"
+        )
         LOG.info("Detection metrics: %s", metrics)
 
         export_best_checkpoint(actual_dir, args.export_to)

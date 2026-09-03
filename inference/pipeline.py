@@ -158,7 +158,9 @@ class NavigationPipeline:
                 "Class identities are still discarded (every detection is labelled '%s'); "
                 "set class_agnostic: true, or fine-tune an nc=1 model with "
                 "training/train_detection.py.",
-                det_w, num_classes, self.detection_label,
+                det_w,
+                num_classes,
+                self.detection_label,
             )
         elif num_classes > 1:
             LOG.info("Detector has %d classes; all are collapsed to '%s'.", num_classes, self.detection_label)
@@ -228,8 +230,13 @@ class NavigationPipeline:
             with torch.inference_mode():
                 t = time.perf_counter()
                 det = self.detector.predict(
-                    frame, imgsz=self.imgsz, conf=self.conf, iou=self.iou,
-                    max_det=self.max_det, device=str(self.device), verbose=False,
+                    frame,
+                    imgsz=self.imgsz,
+                    conf=self.conf,
+                    iou=self.iou,
+                    max_det=self.max_det,
+                    device=str(self.device),
+                    verbose=False,
                 )[0]
                 latency["detection"] = (time.perf_counter() - t) * 1000
 
@@ -240,9 +247,7 @@ class NavigationPipeline:
                     detection_ok = True  # zero detections is valid, not a failure
 
                 t = time.perf_counter()
-                dep = self.depth_model.predict(
-                    frame, imgsz=self.imgsz, device=str(self.device), verbose=False
-                )[0]
+                dep = self.depth_model.predict(frame, imgsz=self.imgsz, device=str(self.device), verbose=False)[0]
                 latency["depth"] = (time.perf_counter() - t) * 1000
 
                 raw = dep.depth.data

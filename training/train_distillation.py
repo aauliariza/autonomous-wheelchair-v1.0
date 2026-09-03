@@ -26,7 +26,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from training.common import build_ultralytics_args, export_best_checkpoint, resolve_data_yaml, setup_experiment  # noqa: E402
+from training.common import (  # noqa: E402
+    build_ultralytics_args,
+    export_best_checkpoint,
+    resolve_data_yaml,
+    setup_experiment,
+)
 from utils.io import load_config, merge_overrides, save_json  # noqa: E402
 from utils.logger import get_logger  # noqa: E402
 
@@ -71,7 +76,6 @@ def main(argv: list[str] | None = None) -> int:
         data_yaml = resolve_data_yaml(config)
         run_dir = setup_experiment(config, args.config, extra={"role": "student_distilled"})
 
-        import torch
         from ultralytics import YOLO
         from ultralytics.models.yolo.depth import DepthTrainer
 
@@ -116,8 +120,10 @@ def main(argv: list[str] | None = None) -> int:
             projections = ProjectionBank(
                 t_ch, s_ch, direction=feat_cfg.get("projection_direction", "teacher_to_student")
             ).to(device)
-            LOG.info("Projection bank: %s auxiliary parameters (excluded from the deployed student)",
-                     f"{projections.num_parameters:,}")
+            LOG.info(
+                "Projection bank: %s auxiliary parameters (excluded from the deployed student)",
+                f"{projections.num_parameters:,}",
+            )
 
         # --- obstacle detector for the ROI term ---
         detector = None
@@ -153,8 +159,9 @@ def main(argv: list[str] | None = None) -> int:
                 optimizer = super().build_optimizer(model, name, lr, momentum, decay, iterations)
                 if projections is not None:
                     optimizer.add_param_group({"params": list(projections.parameters()), "weight_decay": 0.0})
-                    LOG.info("Added %d projection parameter tensors to the optimizer.",
-                             len(list(projections.parameters())))
+                    LOG.info(
+                        "Added %d projection parameter tensors to the optimizer.", len(list(projections.parameters()))
+                    )
                 return optimizer
 
         s_cfg = config.get("student", {}) or {}

@@ -221,19 +221,19 @@ class KDCriterion:
         boxes: list[torch.Tensor] = []
         try:
             with torch.no_grad():
-                results = self.detector.predict(
-                    images, conf=self.roi_conf, max_det=self.roi_max_det, verbose=False
-                )
+                results = self.detector.predict(images, conf=self.roi_conf, max_det=self.roi_max_det, verbose=False)
             for r in results:
                 b = r.boxes.xyxy.detach().cpu() if r.boxes is not None else torch.empty(0, 4)
                 boxes.append(b)
         except (RuntimeError, AttributeError, ValueError) as e:
             # The ROI term degrades to plain depth KD rather than killing the run.
-            LOG.warning("Obstacle detection failed (%s: %s); ROI term falls back to uniform weighting.", type(e).__name__, e)
+            LOG.warning(
+                "Obstacle detection failed (%s: %s); ROI term falls back to uniform weighting.", type(e).__name__, e
+            )
             boxes = [torch.empty(0, 4) for _ in range(images.shape[0])]
 
         if self.cache_detections and keys and len(keys) == len(boxes):
-            for k, b in zip(keys, boxes):
+            for k, b in zip(keys, boxes, strict=True):
                 self._detection_cache[k] = b
         return boxes
 

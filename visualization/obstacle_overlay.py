@@ -16,8 +16,8 @@ from typing import Any
 import cv2
 import numpy as np
 
-COLOR_BLOCKED = (0, 0, 255)      # BGR red
-COLOR_FREE = (0, 200, 0)         # BGR green
+COLOR_BLOCKED = (0, 0, 255)  # BGR red
+COLOR_FREE = (0, 200, 0)  # BGR green
 COLOR_OUT_OF_ROI = (150, 150, 150)
 COLOR_TEXT = (255, 255, 255)
 

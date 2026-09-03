@@ -59,9 +59,7 @@ def read_command_csv(path: Path, command_column: str, frame_column: str = "frame
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         if reader.fieldnames is None or command_column not in reader.fieldnames:
-            raise ValueError(
-                f"Column '{command_column}' not found in {path}. Available: {reader.fieldnames}"
-            )
+            raise ValueError(f"Column '{command_column}' not found in {path}. Available: {reader.fieldnames}")
         for row in reader:
             frame = str(row.get(frame_column, "")).strip()
             cmd = str(row.get(command_column, "")).strip().upper()
@@ -94,11 +92,11 @@ def evaluate(pred: dict[str, str], truth: dict[str, str]) -> dict[str, Any]:
             per_class.setdefault(t, Counter())["fn"] += 1
             per_class.setdefault(p, Counter())["fp"] += 1
             if t in HALTING and p in MOVING:
-                unsafe += 1          # should have stopped, kept moving
+                unsafe += 1  # should have stopped, kept moving
             elif t in MOVING and p in HALTING:
-                over_cautious += 1   # should have moved, stopped
+                over_cautious += 1  # should have moved, stopped
             elif t in MOVING and p in MOVING:
-                unsafe += 1          # wrong direction is also a collision risk
+                unsafe += 1  # wrong direction is also a collision risk
 
     n = len(frames)
     results: dict[str, Any] = {
@@ -108,7 +106,7 @@ def evaluate(pred: dict[str, str], truth: dict[str, str]) -> dict[str, Any]:
         "unsafe_command_rate": unsafe / n,
         "over_cautious_rate": over_cautious / n,
         "safety_distance_violation_rate": unsafe / n,
-        "false_safe_rate": unsafe / n,      # said "safe to move" when it was not
+        "false_safe_rate": unsafe / n,  # said "safe to move" when it was not
         "false_block_rate": over_cautious / n,
     }
 
@@ -157,7 +155,9 @@ def main(argv: list[str] | None = None) -> int:
                 shown = f"{acc:.4f}" if acc is not None else "NOT MEASURED (no support)"
                 print(f"  {cmd:<16} {shown:>26}  (n={sup})")
 
-        save_json({"predictions": str(args.predictions), "ground_truth": str(args.ground_truth), **results}, args.output)
+        save_json(
+            {"predictions": str(args.predictions), "ground_truth": str(args.ground_truth), **results}, args.output
+        )
         LOG.info("Results written to %s", args.output)
     except (FileNotFoundError, ValueError) as e:
         LOG.error("%s", e)

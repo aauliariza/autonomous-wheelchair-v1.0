@@ -154,7 +154,7 @@ class DepthEvaluator:
         """Score a batch, returning how many images were counted."""
         preds = preds.squeeze(1) if getattr(preds, "ndim", 0) == 4 else preds
         gts = gts.squeeze(1) if getattr(gts, "ndim", 0) == 4 else gts
-        return sum(1 for p, g in zip(preds, gts) if self.update(p, g))
+        return sum(1 for p, g in zip(preds, gts, strict=True) if self.update(p, g))
 
     def compute(self) -> dict[str, Any]:
         """Average per-image metrics for both modes.

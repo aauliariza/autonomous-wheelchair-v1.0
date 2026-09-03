@@ -32,7 +32,9 @@ FRAME_LOG_FIELDS = [
 ]
 
 
-def setup_logger(name: str = "wheelchair", level: int = logging.INFO, log_file: str | Path | None = None) -> logging.Logger:
+def setup_logger(
+    name: str = "wheelchair", level: int = logging.INFO, log_file: str | Path | None = None
+) -> logging.Logger:
     """Create a configured logger that writes to stdout and optionally a file."""
     logger = logging.getLogger(name)
     if name in _CONFIGURED:
@@ -80,7 +82,10 @@ class FrameLogger:
         self.path = Path(path)
         self.fields = fields or FRAME_LOG_FIELDS
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._fh = open(self.path, "w", newline="", encoding="utf-8")
+        # Deliberately not a `with` block: the handle must stay open for the whole
+        # session so each frame is appended and flushed as it is processed.
+        # FrameLogger is itself a context manager, and close() is idempotent.
+        self._fh = open(self.path, "w", newline="", encoding="utf-8")  # noqa: SIM115
         self._writer = csv.DictWriter(self._fh, fieldnames=self.fields, extrasaction="ignore")
         self._writer.writeheader()
         self._rows = 0
@@ -136,7 +141,9 @@ class FrameLogger:
                     "bbox_y2": f"{y2:.2f}",
                     "confidence": f"{ob.confidence:.4f}",
                     "depth_m": "" if ob.depth_m is None else f"{ob.depth_m:.4f}",
-                    "euclidean_distance_m": ("" if ob.euclidean_distance_m is None else f"{ob.euclidean_distance_m:.4f}"),
+                    "euclidean_distance_m": (
+                        "" if ob.euclidean_distance_m is None else f"{ob.euclidean_distance_m:.4f}"
+                    ),
                     "valid_depth_ratio": f"{ob.valid_depth_ratio:.4f}",
                     "sector": "" if ob.sector is None else ob.sector,
                     "sector_state": "blocked" if ob.blocked else "free",

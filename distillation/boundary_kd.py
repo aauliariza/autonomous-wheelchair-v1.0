@@ -3,7 +3,7 @@
 .. math::
     G_x = \\partial_x D, \\quad G_y = \\partial_y D, \\quad G = \\sqrt{G_x^2 + G_y^2}
 .. math::
-    L_{boundary} = \\mathrm{SmoothL1}\\big(G_S,\; G_T\\big)
+    L_{boundary} = \\mathrm{SmoothL1}\\big(G_S,\\; G_T\\big)
 
 Why this matters for a wheelchair specifically: the free-path decision depends on
 where an obstacle ENDS and free floor begins. A student that matches the

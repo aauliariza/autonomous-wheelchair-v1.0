@@ -44,8 +44,16 @@ def main(argv: list[str] | None = None) -> int:
 
     LOG.warning("PERCEPTION DEMO ONLY: commands are displayed, never sent to a motor controller.")
 
-    forwarded = ["--source", str(args.camera), "--config", str(args.config),
-                 "--camera-config", str(args.camera_config), "--output", str(args.output)]
+    forwarded = [
+        "--source",
+        str(args.camera),
+        "--config",
+        str(args.config),
+        "--camera-config",
+        str(args.camera_config),
+        "--output",
+        str(args.output),
+    ]
     if args.model:
         forwarded += ["--model", str(args.model)]
     if args.detector:

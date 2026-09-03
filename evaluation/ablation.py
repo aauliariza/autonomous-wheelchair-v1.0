@@ -102,8 +102,11 @@ def collect(experiments_dir: Path, extra_files: list[Path]) -> list[dict[str, An
         record["kd_terms_str"] = ", ".join(terms) if terms else ("none (baseline)" if data.get("role") else None)
 
         # Merge sibling evaluation artefacts written next to the run.
-        for sibling, key in (("depth_metrics.json", "metric"), ("distance_metrics.json", "distance"),
-                             ("latency_benchmark.json", "latency")):
+        for sibling, key in (
+            ("depth_metrics.json", "metric"),
+            ("distance_metrics.json", "distance"),
+            ("latency_benchmark.json", "latency"),
+        ):
             f = path.parent / sibling
             if f.exists():
                 try:

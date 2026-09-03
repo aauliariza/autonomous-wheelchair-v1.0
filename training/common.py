@@ -19,18 +19,56 @@ LOG = get_logger("training")
 
 # Keys forwarded verbatim to Ultralytics' trainer from the config's `train` block.
 PASSTHROUGH_TRAIN_KEYS = (
-    "epochs", "batch", "imgsz", "device", "workers", "optimizer", "lr0", "lrf",
-    "momentum", "weight_decay", "warmup_epochs", "warmup_momentum", "cos_lr",
-    "patience", "amp", "freeze", "val", "plots", "save_period", "single_cls",
-    "dropout", "label_smoothing", "nbs", "fraction", "close_mosaic", "resume",
-    "pretrained", "profile", "deterministic", "seed",
+    "epochs",
+    "batch",
+    "imgsz",
+    "device",
+    "workers",
+    "optimizer",
+    "lr0",
+    "lrf",
+    "momentum",
+    "weight_decay",
+    "warmup_epochs",
+    "warmup_momentum",
+    "cos_lr",
+    "patience",
+    "amp",
+    "freeze",
+    "val",
+    "plots",
+    "save_period",
+    "single_cls",
+    "dropout",
+    "label_smoothing",
+    "nbs",
+    "fraction",
+    "close_mosaic",
+    "resume",
+    "pretrained",
+    "profile",
+    "deterministic",
+    "seed",
 )
 
 # Depth-loss gains and augmentation keys, also forwarded verbatim.
 PASSTHROUGH_LOSS_KEYS = ("dlog", "dgrad", "dlam", "box", "cls", "dfl")
 PASSTHROUGH_AUGMENT_KEYS = (
-    "mosaic", "mixup", "copy_paste", "fliplr", "flipud", "degrees", "translate",
-    "scale", "shear", "perspective", "hsv_h", "hsv_s", "hsv_v", "erasing", "auto_augment",
+    "mosaic",
+    "mixup",
+    "copy_paste",
+    "fliplr",
+    "flipud",
+    "degrees",
+    "translate",
+    "scale",
+    "shear",
+    "perspective",
+    "hsv_h",
+    "hsv_s",
+    "hsv_v",
+    "erasing",
+    "auto_augment",
 )
 
 

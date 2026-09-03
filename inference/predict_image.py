@@ -97,8 +97,10 @@ def main(argv: list[str] | None = None) -> int:
             dist = f"{ob.distance_m:.3f}m" if ob.distance_m is not None else "--"
             euc = f"{ob.euclidean_distance_m:.3f}m" if ob.euclidean_distance_m is not None else "--"
             state = "BLOCKED" if ob.blocked else ("free" if ob.in_roi else "out-ROI")
-            print(f"{ob.id:<4}{ob.label:<10}{ob.confidence:>7.2f}{dist:>11}{euc:>10}"
-                  f"{ob.valid_depth_ratio:>8.2f}{str(ob.sector or '-'):>8}{state:>9}")
+            print(
+                f"{ob.id:<4}{ob.label:<10}{ob.confidence:>7.2f}{dist:>11}{euc:>10}"
+                f"{ob.valid_depth_ratio:>8.2f}{str(ob.sector or '-'):>8}{state:>9}"
+            )
         print("-" * 68)
         print("sector occupancy :", {k: ("blocked" if v else "free") for k, v in result.occupancy.items()})
 
