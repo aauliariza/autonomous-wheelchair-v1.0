@@ -55,6 +55,12 @@ env/
 .coverage
 htmlcov/
 
+# Generated dataset configs: prepare_sunrgbd.py writes an absolute dataset root
+# into these, so they are machine-specific and must not be committed.
+configs/data/*.yaml
+configs/data/*.json
+!configs/data/.gitkeep
+
 # Secrets / local env
 .env
 .env.*
