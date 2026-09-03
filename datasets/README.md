@@ -105,10 +105,53 @@ python datasets/scripts/convert_to_obstacle_dataset.py --format scaffold --outpu
 
 creates the empty structure to drop real labels into later.
 
-> SUN RGB-D does ship 2D/3D object annotations. Converting them is legitimate,
-> but note that they are *object* annotations: not every annotated object is a
-> navigation obstacle (a picture on a wall is not), and not every obstacle is
-> annotated. Validate before training on them.
+### Using SUN RGB-D's own 2D annotations
+
+SUN RGB-D ships native 2D bounding boxes (146,617 of them across the dataset),
+so it does not need external annotations at all. Download
+`SUNRGBDMeta2DBB_v2.mat` (from the SUNRGBDtoolbox release on
+<https://rgbd.cs.princeton.edu/>) alongside the extracted `SUNRGBD.zip`
+`--source` tree, then:
+
+```bash
+python datasets/scripts/convert_sunrgbd_obstacle.py \
+    --source /path/to/SUNRGBD \
+    --meta /path/to/SUNRGBDMeta2DBB_v2.mat \
+    --split-file configs/data/sunrgbd_official_split.json \
+    --output datasets/obstacle
+```
+
+`--split-file` reuses the same official split JSON produced by
+`prepare_sunrgbd.py --convert-allsplit` (see above), so the detection dataset
+and the depth dataset partition scenes identically — no leakage between the
+two.
+
+Every SUN RGB-D object class collapses to `obstacle` (spec section A): the
+field is read only to confirm it exists, never to decide the output label.
+Degenerate and sub-`--min-box-size` boxes are dropped the same way as the
+generic converter above.
+
+> SUN RGB-D's 2D annotations are *object* annotations, not curated obstacle
+> labels: not every annotated object is a navigation obstacle (a picture on a
+> wall is not), and coverage varies by scene. Inspect a sample of converted
+> labels before training a detector on them at scale.
+
+**Format note.** `SUNRGBDMeta2DBB_v2.mat`'s field layout (`SUNRGBDMeta2DBB(i)
+.groundtruth2DBB(j).gtBb2D` = `[x, y, width, height]` pixels, `.classname`)
+was verified against the raw source of two independent, long-maintained
+reference implementations that consume this exact file
+([facebookresearch/votenet](https://github.com/facebookresearch/votenet),
+[charlesq34/frustum-pointnets](https://github.com/charlesq34/frustum-pointnets))
+plus an explicit SUN RGB-D → COCO converter
+([crmauceri/SUNRGBD_COCO](https://github.com/crmauceri/SUNRGBD_COCO)) whose
+box arithmetic (`x2 = gtBb2D(1) + gtBb2D(3)`) is what pins down the `[x,y,w,h]`
+convention — not from an assumption. `rgbd.cs.princeton.edu` itself is
+unreachable from some sandboxed environments (egress-proxy denied), so the
+converter never trusts a single guessed path convention for locating each
+scene's RGB file: it anchors on the four known sensor root directories
+(`kv1`, `kv2`, `realsense`, `xtion`) and falls back to a logged,
+non-fabricating filename search — see the module docstring in
+`convert_sunrgbd_obstacle.py` for the full reasoning.
 
 ## Smoke-test fixture
 

@@ -138,7 +138,17 @@ python datasets/scripts/verify_dataset.py --data configs/data/sunrgbd.yaml --rep
 Runs all ten required checks plus cross-split leakage detection, and exits
 non-zero on failure so it can gate training.
 
-Optional, for a fine-tuned `nc=1` detector (the pipeline works without it):
+Optional, for a fine-tuned `nc=1` detector (the pipeline works without it).
+SUN RGB-D's own 2D box annotations need no external labels at all — download
+`SUNRGBDMeta2DBB_v2.mat` alongside the extracted dataset:
+
+```bash
+python datasets/scripts/convert_sunrgbd_obstacle.py \
+    --source /path/to/SUNRGBD --meta /path/to/SUNRGBDMeta2DBB_v2.mat \
+    --split-file configs/data/sunrgbd_official_split.json --output datasets/obstacle
+```
+
+Or convert an externally annotated YOLO/COCO dataset:
 
 ```bash
 python datasets/scripts/convert_to_obstacle_dataset.py --format yolo \
