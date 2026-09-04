@@ -138,6 +138,8 @@ python datasets/scripts/verify_dataset.py --data configs/data/sunrgbd.yaml --rep
 Runs all ten required checks plus cross-split leakage detection, and exits
 non-zero on failure so it can gate training.
 
+### STEP 6b — Obstacle detection dataset (optional)
+
 Optional, for a fine-tuned `nc=1` detector (the pipeline works without it).
 SUN RGB-D's own 2D box annotations need no external labels at all — download
 `SUNRGBDMeta2DBB_v2.mat` alongside the extracted dataset:
@@ -155,9 +157,67 @@ python datasets/scripts/convert_to_obstacle_dataset.py --format yolo \
     --source /path/to/annotated --output datasets/obstacle
 ```
 
+## Knowledge distillation
+
+The student is trained against five distillation terms plus a mandatory
+ground-truth term. Every term lives in its own module and is switched on or off
+from `configs/distillation.yaml`, which is what makes the ablation a
+configuration change rather than a code change.
+
+| Term | Module | `lambda` | What it transfers |
+|---|---|---|---|
+| Ground truth | `distillation/losses.py` | 1.0 | Ultralytics' own depth loss against the SUN RGB-D label |
+| Depth output | `distillation/depth_kd.py` | 0.5 | The teacher's per-pixel depth, on valid pixels only |
+| Feature | `distillation/feature_kd.py` | 0.2 | Intermediate activations at layers `[16, 19, 22]` |
+| Boundary | `distillation/boundary_kd.py` | 0.1 | Depth gradients — where an obstacle ends and floor begins |
+| Relative depth | `distillation/relative_kd.py` | 0.1 | Ordinal structure: which of two pixels is nearer |
+| Obstacle ROI | `distillation/roi_kd.py` | 0.2 | The same residual, weighted `alpha` inside obstacle boxes |
+
+`L_total` is their weighted sum. Four properties are worth knowing before you
+change anything:
+
+- **The ground-truth term cannot be disabled.** `DistillationLoss.__init__`
+  raises if `lambda_gt <= 0`. A student supervised only by the teacher inherits
+  the teacher's systematic errors with nothing to correct them.
+- **Teacher and student have different channel widths**, so `models/projection.py`
+  aligns them with a 1x1 convolution before the feature distance. Spatial
+  dimensions already match at all three levels, so nothing is resampled.
+- **Depth, boundary and relative terms work in log space by default.** A 0.1 m
+  error at 0.5 m matters far more to a wheelchair than the same error at 8 m; a
+  linear-space loss weights them identically.
+- **The ROI term weights obstacle pixels by `alpha`, background by 1 — not 0.**
+  Driving the background to zero would let the student drift on the floor plane,
+  and the floor is what free path is measured against.
+
+Every `lambda` above is the starting point written in the spec, **not a tuned
+optimum**. STEP 11 searches for better values. Full derivations and the masking
+policy are in [docs/knowledge_distillation.md](docs/knowledge_distillation.md).
+
 ## Training
 
+### STEP 6c — Obstacle detector (optional)
+
+Fine-tunes YOLO26n down to a single class, `obstacle`. Needs the dataset from
+STEP 6b; `train_detection.py` refuses to start unless it declares `nc=1`.
+
+```bash
+python training/train_detection.py --config configs/detection.yaml
+```
+
+Skip this and the pipeline still runs: `configs/navigation.yaml` sets
+`detection.class_agnostic: true`, which relabels every COCO detection from the
+stock `yolo26n.pt` as `obstacle` with no retraining. Fine-tuning is the
+higher-accuracy path once real indoor annotations exist. The detector also
+supplies the boxes for the ROI term above, so train it before Experiment E if
+you want that term learning from tuned boxes.
+
 ### STEP 7-8 — Teacher
+
+The teacher is trained first and to convergence, because every KD experiment
+then distils from the same frozen checkpoint — that is what keeps the ablation
+rows comparable. Ultralytics fits the log-affine calibration (`cal_a`/`cal_b`)
+on the validation split afterwards and writes it into the checkpoint; without
+it the SILog training loss is scale-invariant and the output is not metric.
 
 ```bash
 python training/train_teacher.py --config configs/teacher.yaml
@@ -165,6 +225,11 @@ python evaluation/evaluate_depth.py --model outputs/checkpoints/teacher_best.pt 
 ```
 
 ### STEP 9-10 — Student baseline (Experiment A)
+
+The same student architecture trained on ground truth alone, with no teacher.
+This row exists to establish the teacher-student gap **before** any distillation,
+so the later KD rows have something to be measured against. Skipping it leaves
+the ablation table unable to show that KD helped at all.
 
 ```bash
 python training/train_student_baseline.py --config configs/student.yaml
@@ -179,6 +244,10 @@ python tuning/analyze_trials.py --storage sqlite:///outputs/optuna/kd_depth_sear
 ```
 
 ### STEP 12 — Distilled student
+
+Experiment E: the student trained with the ground-truth term plus all five KD
+terms described above, against the frozen teacher from STEP 7. The teacher runs
+under `torch.no_grad()` and is never updated.
 
 ```bash
 python training/train_distillation.py --config configs/distillation.yaml
@@ -195,6 +264,20 @@ done
 python evaluation/ablation.py --experiments outputs/experiments --output docs/ablation
 ```
 
+Each preset disables the KD terms that row excludes (`EXPERIMENT_PRESETS` in
+`training/train_distillation.py`):
+
+| Row | Command | KD terms active |
+|---|---|---|
+| A | `train_student_baseline.py` | none — ground truth only |
+| B | `--experiment B` | depth output |
+| C | `--experiment C` | + feature |
+| D | `--experiment D` | + boundary |
+| E | `--experiment E` | + relative + obstacle ROI (complete) |
+| F | `train_teacher.py` | teacher, the distillation source |
+
+A and F are not in the loop above because they are produced by STEP 9 and
+STEP 7; `evaluation/ablation.py` collects all six rows from `outputs/experiments`.
 Ablation rows are **configuration changes, not code changes**.
 
 ## Evaluation
@@ -314,6 +397,7 @@ python training/train_distillation.py --config configs/distillation.yaml \
 |---|---|
 | `Checkpoint not found` | The error lists every path searched. Train first, or pass `--model`. |
 | `Dataset config not found` | Run `prepare_sunrgbd.py`; the message shows the expected command. |
+| Unsure whether RGB and depth actually pair up | `python datasets/scripts/diagnose_pairing.py --data configs/data/sunrgbd.yaml` prints the checked-out commit, per-split counts by suffix, and for sample images the exact path Ultralytics resolves plus `os.path.isfile`. Read-only. |
 | `ignoring image with missing depth map ....npy` then `No labels found` | RGB images have no paired depth map. Ultralytics probes `depth/<split>/<stem>.png` first and only names `.npy` as the fallback, so the `.npy` in that message is a symptom, not the format. The trainers now catch this in under a second and print the per-split counts, the suffixes actually present, and the fix: `repair_orphaned_pairs.py` (drops half-pairs) or a re-run of `prepare_sunrgbd.py` (restores every scene). |
 | Student loss decreases but nothing learns | `.pt` files load with `requires_grad=False`. Use `StudentDepthModel`, which calls `unfreeze()`. |
 | `cannot pickle '_thread.lock'` | A KD criterion stored on the model. Keep it in the module registry — see `training/kd_trainer.py`. |
