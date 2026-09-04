@@ -363,3 +363,44 @@ class TestDepthPairingPrecheck:
         cfg.write_text(yaml.safe_dump({"path": str(tmp_path / "absent")}))
         with pytest.raises(FileNotFoundError, match="Dataset root not found"):
             verify_depth_pairing(cfg)
+
+    @staticmethod
+    def _case_sensitive(tmp_path: Path) -> bool:
+        """True when the filesystem distinguishes 'A' from 'a' in filenames."""
+        probe = tmp_path / "CaseProbe"
+        probe.write_bytes(b"")
+        return not (tmp_path / "caseprobe").exists()
+
+    def test_wrong_case_suffix_is_rejected(self, tmp_path: Path) -> None:
+        """'.PNG' passes a stem comparison but Ultralytics only opens '.png'."""
+        from training.common import verify_depth_pairing
+
+        if not self._case_sensitive(tmp_path):
+            pytest.skip("filesystem is case-insensitive; the mismatch cannot occur here")
+
+        cfg = self._dataset(tmp_path / "case", n=2, depth_for=2)
+        for p in (tmp_path / "case" / "depth").rglob("*.png"):
+            p.rename(p.with_suffix(".PNG"))
+        with pytest.raises(ValueError, match="case-sensitive"):
+            verify_depth_pairing(cfg)
+
+    def test_broken_symlink_depth_is_rejected(self, tmp_path: Path) -> None:
+        """iterdir() lists a dangling symlink; is_file() — and Ultralytics — reject it."""
+        from training.common import verify_depth_pairing
+
+        cfg = self._dataset(tmp_path / "link", n=2, depth_for=0)
+        for i in range(2):
+            (tmp_path / "link" / "depth" / "train" / f"s{i}.png").symlink_to(tmp_path / "gone" / f"s{i}.png")
+        with pytest.raises(ValueError, match="broken symlink"):
+            verify_depth_pairing(cfg)
+
+    def test_resolution_matches_ultralytics_implementation(self, tmp_path: Path) -> None:
+        """Guard against drift from DepthDataset._depth_path_for."""
+        pytest.importorskip("ultralytics")
+        from ultralytics.data.dataset import DepthDataset
+
+        from training.common import ultralytics_depth_path
+
+        self._dataset(tmp_path / "parity", n=1)
+        img = tmp_path / "parity" / "images" / "train" / "s0.jpg"
+        assert str(ultralytics_depth_path(img)) == DepthDataset._depth_path_for(None, str(img))

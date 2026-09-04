@@ -7,6 +7,7 @@ config file — which is what makes the study reproducible.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -173,21 +174,55 @@ DEPTH_SUFFIXES = (".png", ".npy")
 IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
 
 
-def _stems(directory: Path, suffixes: tuple[str, ...]) -> set[str]:
-    """Return the filename stems in ``directory`` whose suffix is in ``suffixes``."""
-    if not directory.is_dir():
-        return set()
-    return {p.stem for p in directory.iterdir() if p.suffix.lower() in suffixes}
+def ultralytics_depth_path(im_file: Path) -> Path | None:
+    """Resolve an image's depth target exactly as Ultralytics does, or None.
+
+    Mirrors ``DepthDataset._depth_path_for`` (ultralytics/data/dataset.py): swap the
+    LAST ``images`` path component for ``depth``, then probe ``.png`` before
+    ``.npy``. Comparing filename STEMS instead — as an earlier version of this
+    check did — is not equivalent: it silently accepts a companion Ultralytics
+    will reject, such as ``FRAME.PNG`` on a case-sensitive filesystem or a
+    dangling symlink that ``iterdir()`` lists but ``is_file()`` denies. That gap
+    let the guard pass on a dataset training then failed on.
+    """
+    parts = list(im_file.parts)
+    for i in range(len(parts) - 1, -1, -1):
+        if parts[i] == "images":
+            parts[i] = "depth"
+            break
+    base = Path(*parts)
+    for suffix in DEPTH_SUFFIXES:
+        candidate = base.with_suffix(suffix)
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _near_miss(im_file: Path, dep_dir: Path) -> str:
+    """Explain why a depth companion was rejected, when something similar exists."""
+    if not dep_dir.is_dir():
+        return "depth directory does not exist"
+    wanted = im_file.with_suffix(".png").name
+    stem = im_file.stem
+    for entry in dep_dir.iterdir():
+        if entry.stem != stem and entry.stem.lower() != stem.lower():
+            continue
+        if entry.is_symlink() and not entry.exists():
+            return f"'{entry.name}' is a broken symlink -> {os.readlink(entry)}"
+        if entry.suffix.lower() not in DEPTH_SUFFIXES:
+            return f"'{entry.name}' has an unsupported suffix; Ultralytics needs '{wanted}' or a .npy"
+        return f"'{entry.name}' exists but Ultralytics looks for exactly '{wanted}' (names are case-sensitive here)"
+    return f"no file named '{wanted}' (or .npy) in {dep_dir.name}/"
 
 
 def verify_depth_pairing(data_yaml: str | Path, splits: tuple[str, ...] = ("train", "val")) -> dict[str, int]:
-    """Fail fast when RGB images have no paired depth map.
+    """Fail fast when RGB images have no depth companion Ultralytics will accept.
 
-    Ultralytics' ``DepthDataset`` silently SKIPS an image whose depth companion is
-    missing, then aborts with "No labels found" only after scanning the whole
-    split. On SUN RGB-D that wastes minutes per attempt and hides the real cause,
-    so this reproduces the same pairing rule (``images/<split>/x.jpg`` ->
-    ``depth/<split>/x.{png,npy}``) up front, in one directory listing per split.
+    ``DepthDataset`` silently SKIPS an unpaired image and only aborts with "No
+    labels found" once the whole split has been scanned, which on SUN RGB-D costs
+    minutes per attempt and hides the cause. This applies the identical
+    resolution rule up front and, when it fails, says why for the first few
+    images rather than only that something is missing.
 
     Args:
         data_yaml (str | Path): Prepared dataset YAML with a ``path`` entry.
@@ -197,7 +232,7 @@ def verify_depth_pairing(data_yaml: str | Path, splits: tuple[str, ...] = ("trai
         (dict): Paired-image count per split that exists.
 
     Raises:
-        FileNotFoundError: The dataset root or a split's ``images/`` is absent.
+        FileNotFoundError: The dataset root or the train ``images/`` is absent.
         ValueError: A split has unpaired images, naming the recovery command.
     """
     from utils.io import load_yaml
@@ -220,25 +255,22 @@ def verify_depth_pairing(data_yaml: str | Path, splits: tuple[str, ...] = ("trai
                 raise FileNotFoundError(f"Missing image split: {img_dir.resolve()}")
             continue
 
-        img_stems = _stems(img_dir, IMAGE_SUFFIXES)
-        dep_stems = _stems(dep_dir, DEPTH_SUFFIXES)
-        missing = sorted(img_stems - dep_stems)
-        paired[split] = len(img_stems) - len(missing)
+        images = sorted(p for p in img_dir.iterdir() if p.suffix.lower() in IMAGE_SUFFIXES)
+        missing = [p for p in images if ultralytics_depth_path(p) is None]
+        paired[split] = len(images) - len(missing)
 
         if not missing:
             LOG.info("Split '%s': %d RGB-depth pairs OK", split, paired[split])
             continue
 
-        # Report what the depth directory ACTUALLY holds: an empty directory, a
-        # wrong extension and a name mismatch each need a different fix, and the
-        # counts alone cannot tell them apart.
-        present = sorted({p.suffix.lower() for p in dep_dir.iterdir()}) if dep_dir.is_dir() else []
+        present = sorted({p.suffix for p in dep_dir.iterdir()}) if dep_dir.is_dir() else []
+        reasons = "\n".join(f"    - {p.name}: {_near_miss(p, dep_dir)}" for p in missing[:3])
         raise ValueError(
-            f"Split '{split}': {len(missing)} of {len(img_stems)} RGB images have no depth map "
-            f"in {dep_dir.resolve()} ({paired[split]} usable pairs).\n"
-            f"  Ultralytics probes {' then '.join(DEPTH_SUFFIXES)}; suffixes present there: "
+            f"Split '{split}': {len(missing)} of {len(images)} RGB images have no depth map "
+            f"Ultralytics can load ({paired[split]} usable pairs).\n"
+            f"  Looked in {dep_dir.resolve()}; suffixes present there (case as stored): "
             f"{present or 'NONE (directory empty or absent)'}\n"
-            f"  First missing stems: {', '.join(missing[:3])}\n"
+            f"  Why the first few failed:\n{reasons}\n"
             f"  Recovery, in order:\n"
             f"    1. Drop the half-pairs (fast, keeps the rest):\n"
             f"       python datasets/scripts/repair_orphaned_pairs.py --data {root}\n"
