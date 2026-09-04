@@ -65,11 +65,57 @@ def build_pruner(cfg: dict[str, Any]):
     )
 
 
+def build_trial_trainer(projections):
+    """Return a ``DepthTrainer`` subclass wired to this trial's projection bank.
+
+    Defined at module scope, and returned rather than nested, so the signature of
+    ``get_model`` can be asserted by a test. It could not be before, and the
+    parameter had been renamed ``cfg_`` to avoid shadowing the enclosing trial
+    config — which silently broke the call contract: Ultralytics invokes it as
+    ``self.get_model(cfg=cfg, weights=..., verbose=...)`` with ``cfg`` passed by
+    KEYWORD (ultralytics/engine/trainer.py), so every trial died with
+    ``TypeError: got an unexpected keyword argument 'cfg'`` before training a
+    single batch. The parameter must stay named ``cfg``.
+
+    Args:
+        projections (ProjectionBank | None): Feature projections to add to the
+            optimizer, or None when the feature term is disabled.
+
+    Returns:
+        (type): A ``DepthTrainer`` subclass for this trial.
+    """
+    # Deferred like every other heavy import in this module, so `--help` works
+    # without torch installed.
+    from ultralytics.models.yolo.depth import DepthTrainer
+
+    from training.kd_trainer import KDDepthModel
+
+    class TrialTrainer(DepthTrainer):
+        """DepthTrainer that builds the KD-aware model for this trial."""
+
+        def get_model(self, cfg=None, weights=None, verbose=True):
+            """Return the KD model with gradients explicitly enabled."""
+            model = KDDepthModel(cfg, ch=self.data.get("channels", 3), nc=self.data["nc"], verbose=verbose)
+            if weights:
+                model.load(weights)
+            for p in model.parameters():
+                p.requires_grad_(True)
+            return model
+
+        def build_optimizer(self, model, name="auto", lr=0.001, momentum=0.9, decay=1e-5, iterations=1e5):
+            """Include the trial's projection parameters in the optimizer."""
+            opt = super().build_optimizer(model, name, lr, momentum, decay, iterations)
+            if projections is not None:
+                opt.add_param_group({"params": list(projections.parameters()), "weight_decay": 0.0})
+            return opt
+
+    return TrialTrainer
+
+
 def run_trial(trial, config: dict[str, Any], objective: CompositeObjective, work_dir: Path) -> float:
     """Train, evaluate and score one trial."""
     import numpy as np
     from ultralytics import YOLO
-    from ultralytics.models.yolo.depth import DepthTrainer
 
     from evaluation.metrics import DepthEvaluator
     from models.model_utils import measure_latency, select_device
@@ -77,7 +123,7 @@ def run_trial(trial, config: dict[str, Any], objective: CompositeObjective, work
     from models.student import StudentDepthModel
     from models.teacher import TeacherDepthModel
     from training.common import build_ultralytics_args, resolve_data_yaml
-    from training.kd_trainer import KDDepthModel, clear_kd_context, set_kd_context
+    from training.kd_trainer import clear_kd_context, set_kd_context
 
     space = config.get("search_space", {}) or {}
     params = {name: suggest(trial, name, spec) for name, spec in space.items()}
@@ -120,24 +166,7 @@ def run_trial(trial, config: dict[str, Any], objective: CompositeObjective, work
 
     set_kd_context(cfg, teacher, projections, detector)
 
-    class TrialTrainer(DepthTrainer):
-        """DepthTrainer that builds the KD-aware model for this trial."""
-
-        def get_model(self, cfg_=None, weights=None, verbose=True):
-            """Return the KD model with gradients explicitly enabled."""
-            model = KDDepthModel(cfg_, ch=self.data.get("channels", 3), nc=self.data["nc"], verbose=verbose)
-            if weights:
-                model.load(weights)
-            for p in model.parameters():
-                p.requires_grad_(True)
-            return model
-
-        def build_optimizer(self, model, name="auto", lr=0.001, momentum=0.9, decay=1e-5, iterations=1e5):
-            """Include the trial's projection parameters in the optimizer."""
-            opt = super().build_optimizer(model, name, lr, momentum, decay, iterations)
-            if projections is not None:
-                opt.add_param_group({"params": list(projections.parameters()), "weight_decay": 0.0})
-            return opt
+    TrialTrainer = build_trial_trainer(projections)
 
     try:
         overrides = build_ultralytics_args(cfg, data_yaml)

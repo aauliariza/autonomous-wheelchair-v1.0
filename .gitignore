@@ -20,10 +20,13 @@
 *.7z
 
 # Data & experiment outputs (never commit)
-datasets/sunrgbd/
-datasets/depth8-png/
-datasets/*-png/
-datasets/depth-*/
+# Everything under datasets/ is DATA except the converter scripts and their
+# README. Listing directories one by one missed datasets/obstacle/, which
+# STEP 6b tells you to create — a `git add .` would then have committed the
+# whole obstacle detection set. Allow-listing is the safe direction.
+datasets/*
+!datasets/README.md
+!datasets/scripts/
 # Exclude contents but keep the tracked placeholder: git cannot descend into a
 # fully-excluded directory, so a bare `outputs/` would make `!outputs/.gitkeep` dead.
 outputs/*

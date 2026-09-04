@@ -318,11 +318,17 @@ python inference/webcam.py --camera 0
 ### STEP 20-23 — Pipeline, tests, benchmark, export
 
 ```bash
-python evaluation/evaluate_navigation.py --predictions outputs/predictions/run_telemetry.csv --ground-truth data/nav_gt.csv
+# predict_video.py writes <video stem>_telemetry.csv automatically — no flag needed
+python evaluation/evaluate_navigation.py --predictions outputs/predictions/test_telemetry.csv --ground-truth data/nav_gt.csv
 python -m pytest tests/ -q
 python evaluation/benchmark_latency.py --depth-model outputs/checkpoints/student_distilled_best.pt
 python evaluation/validate_numerical_consistency.py --model outputs/checkpoints/student_distilled_best.pt --formats onnx
 ```
+
+`--ground-truth` is a CSV **you label by hand**, with columns `frame_id` and
+`gt_command` (`FORWARD`, `TURN_LEFT`, `TURN_RIGHT` or `STOP`); it is joined to
+the telemetry on `frame_id`. Without it the navigation metrics cannot be
+computed — there is no automatic ground truth for a free-path decision.
 
 > **Export caveat (measured).** The ONNX *graph* matches PyTorch to 7×10⁻⁶, but
 > the full pipeline diverges by 2.28 m on **letterboxed non-square** input — a
