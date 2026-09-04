@@ -188,7 +188,7 @@ def load_official_split(split_file: Path | None, scenes: list[Path], source: Pat
         raise DatasetError(
             "Official split file not found.\n"
             "  --split official requires the SUN RGB-D toolbox partition (allsplit.mat),\n"
-            "  converted to JSON as {\"train\": [...], \"test\": [...]} and passed via --split-file.\n"
+            '  converted to JSON as {"train": [...], "test": [...]} and passed via --split-file.\n'
             "  Obtain it from https://rgbd.cs.princeton.edu/data/SUNRGBDtoolbox.zip\n"
             "    (SUNRGBDtoolbox/traintestSUNRGBD/allsplit.mat)\n"
             "  Convert with:\n"
@@ -248,7 +248,8 @@ def ultralytics_split(scenes: list[Path], source: Path, num_val: int = 1090, see
         "Using the ULTRALYTICS RANDOM split (seed %d, %d val scenes). This ignores the official "
         "SUN RGB-D partition and may leak near-duplicate views of the same room across train/val. "
         "Prefer --split official for published results.",
-        seed, len(val),
+        seed,
+        len(val),
     )
     return {"train": train, "val": val}
 
@@ -304,12 +305,42 @@ def convert(
                 depth_m = cv2.resize(depth_m, (rgb.shape[1], rgb.shape[0]), interpolation=cv2.INTER_NEAREST)
 
             png = np.clip(depth_m * DEPTH_SCALE, 0, 65535).astype(np.uint16)
-            cv2.imwrite(str(output / "images" / split / f"{name}.jpg"), rgb)
-            cv2.imwrite(str(output / "depth" / split / f"{name}.png"), png)
+            img_out = output / "images" / split / f"{name}.jpg"
+            dep_out = output / "depth" / split / f"{name}.png"
+
+            # cv2.imwrite can fail WITHOUT raising (it returns False on many
+            # failure modes: unsupported path, disk full, encoder rejection).
+            # A previous version of this function never checked the return
+            # value, which let a depth-write failure silently produce a JPG
+            # with no matching depth file -- invisible until Ultralytics tried
+            # to train on it, thousands of images and hours later. Every write
+            # is now verified, both by its return value AND by re-checking the
+            # file actually exists afterward, and a failure on EITHER file
+            # removes the sibling so no orphaned half-pair is ever left behind.
+            img_ok = cv2.imwrite(str(img_out), rgb) and img_out.is_file()
+            dep_ok = cv2.imwrite(str(dep_out), png) and dep_out.is_file()
+
+            if not (img_ok and dep_ok):
+                LOG.warning(
+                    "Write failed for scene '%s' (image ok=%s, depth ok=%s); "
+                    "rgb shape=%s dtype=%s, depth shape=%s dtype=%s. Removing any partial output.",
+                    name,
+                    img_ok,
+                    dep_ok,
+                    rgb.shape,
+                    rgb.dtype,
+                    png.shape,
+                    png.dtype,
+                )
+                img_out.unlink(missing_ok=True)
+                dep_out.unlink(missing_ok=True)
+                skipped += 1
+                continue
+
             counts[split] += 1
 
     if skipped:
-        LOG.warning("Skipped %d scene(s) with missing or unreadable files.", skipped)
+        LOG.warning("Skipped %d scene(s) with missing, unreadable, or unwritable files.", skipped)
     return counts
 
 
