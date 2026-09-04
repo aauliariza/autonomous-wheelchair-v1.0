@@ -193,6 +193,59 @@ Every `lambda` above is the starting point written in the spec, **not a tuned
 optimum**. STEP 11 searches for better values. Full derivations and the masking
 policy are in [docs/knowledge_distillation.md](docs/knowledge_distillation.md).
 
+### Running one KD term at a time
+
+The presets in STEP 13 are **cumulative** (each row adds a term to the one
+before). To measure a term *in isolation* instead — ground truth plus that term
+and nothing else — disable the other four with `--set`:
+
+```bash
+# 1. Depth output only
+python training/train_distillation.py --config configs/distillation.yaml \
+    --set experiment.name=kd_depth_only \
+    kd.feature.enabled=false kd.boundary.enabled=false kd.relative.enabled=false kd.roi.enabled=false
+
+# 2. Feature only
+python training/train_distillation.py --config configs/distillation.yaml \
+    --set experiment.name=kd_feature_only \
+    kd.depth.enabled=false kd.boundary.enabled=false kd.relative.enabled=false kd.roi.enabled=false
+
+# 3. Boundary only
+python training/train_distillation.py --config configs/distillation.yaml \
+    --set experiment.name=kd_boundary_only \
+    kd.depth.enabled=false kd.feature.enabled=false kd.relative.enabled=false kd.roi.enabled=false
+
+# 4. Relative depth only
+python training/train_distillation.py --config configs/distillation.yaml \
+    --set experiment.name=kd_relative_only \
+    kd.depth.enabled=false kd.feature.enabled=false kd.boundary.enabled=false kd.roi.enabled=false
+
+# 5. Obstacle ROI only
+python training/train_distillation.py --config configs/distillation.yaml \
+    --set experiment.name=kd_roi_only \
+    kd.depth.enabled=false kd.feature.enabled=false kd.boundary.enabled=false kd.relative.enabled=false
+```
+
+Three things to know before running these:
+
+- **`experiment.name` is not optional here.** Unlike `--experiment B`, which
+  appends its tag to the run name automatically, `--set` does not rename
+  anything: leave it out and all five runs write to the same directory and
+  overwrite each other.
+- **The ground-truth term cannot be isolated away.** `kd.gt.enabled=false` is
+  refused (spec section O), so every row above is *ground truth + one term*, and
+  the honest comparison baseline for them is Experiment A, not zero.
+- **Isolation and the cumulative presets answer different questions.** Isolation
+  says what one term contributes alone; the presets say what it adds on top of
+  the terms already present. A term can look weak alone and still help in
+  combination. Report which one you ran.
+
+Verify a run used the terms you intended — the trainer logs them at startup:
+
+```
+KD terms active: {'active_terms': ['gt', 'boundary'], 'lambdas': {'gt': 1.0, 'boundary': 0.1}}
+```
+
 ## Training
 
 ### STEP 6c — Obstacle detector (optional)
@@ -411,6 +464,114 @@ python training/train_distillation.py --config configs/distillation.yaml \
 | Euclidean distance refused | `configs/camera.yaml` still has `calibrated: false`. Run the calibration script. |
 | CUDA requested but unavailable | Falls back to CPU with a warning. Pass `--device cpu` to silence it. |
 | ONNX depths differ from PyTorch | Letterboxing. Use square inputs at exactly `imgsz`. |
+
+## Complete runbook
+
+Every command in this repository, in the order you run them. Each is explained
+in its own STEP above; this section exists so the whole pipeline can be read —
+or copied — from one place. Paths assume you run from the repository root.
+
+```bash
+# ---------- Setup (STEP 1-4) ----------
+git clone https://github.com/aauliariza/autonomous-wheelchair-v1.0.git
+cd autonomous-wheelchair-v1.0
+conda env create -f environment.yml && conda activate wheelchair   # or python -m venv .venv
+pip install -r requirements.txt
+python scripts/inspect_model.py --model yolo26n-depth.pt           # verify the install
+
+# ---------- Depth dataset (STEP 5-6) ----------
+python datasets/scripts/prepare_sunrgbd.py \
+    --convert-allsplit /path/to/SUNRGBDtoolbox/traintestSUNRGBD/allsplit.mat \
+    --split-file configs/data/sunrgbd_official_split.json
+python datasets/scripts/prepare_sunrgbd.py \
+    --source /path/to/SUNRGBD \
+    --split official --split-file configs/data/sunrgbd_official_split.json \
+    --output datasets/sunrgbd --config-out configs/data/sunrgbd.yaml
+python datasets/scripts/verify_dataset.py --data configs/data/sunrgbd.yaml \
+    --report outputs/dataset_report.json
+
+# ---------- Obstacle dataset + detector, optional (STEP 6b-6c) ----------
+python datasets/scripts/convert_sunrgbd_obstacle.py \
+    --source /path/to/SUNRGBD --meta /path/to/SUNRGBDMeta2DBB_v2.mat \
+    --split-file configs/data/sunrgbd_official_split.json --output datasets/obstacle
+python training/train_detection.py --config configs/detection.yaml
+
+# ---------- Teacher, Experiment F (STEP 7-8) ----------
+python training/train_teacher.py --config configs/teacher.yaml
+python evaluation/evaluate_depth.py --model outputs/checkpoints/teacher_best.pt \
+    --data configs/data/sunrgbd.yaml
+
+# ---------- Student baseline, Experiment A (STEP 9-10) ----------
+python training/train_student_baseline.py --config configs/student.yaml
+python evaluation/evaluate_depth.py --model outputs/checkpoints/student_baseline_best.pt \
+    --data configs/data/sunrgbd.yaml
+
+# ---------- Hyperparameter search (STEP 11) ----------
+python tuning/optuna_study.py --config configs/optuna.yaml
+python tuning/analyze_trials.py \
+    --storage sqlite:///outputs/optuna/kd_depth_search.db --plots
+
+# ---------- Distilled student, Experiment E (STEP 12) ----------
+python training/train_distillation.py --config configs/distillation.yaml
+# or, with the tuned lambdas found above:
+python training/train_distillation.py --config outputs/optuna/best_config.yaml
+
+# ---------- Cumulative ablation B-E (STEP 13) ----------
+for exp in B C D E; do
+    python training/train_distillation.py --config configs/distillation.yaml --experiment $exp
+done
+
+# ---------- One KD term at a time (isolation) ----------
+python training/train_distillation.py --config configs/distillation.yaml \
+    --set experiment.name=kd_depth_only \
+    kd.feature.enabled=false kd.boundary.enabled=false kd.relative.enabled=false kd.roi.enabled=false
+python training/train_distillation.py --config configs/distillation.yaml \
+    --set experiment.name=kd_feature_only \
+    kd.depth.enabled=false kd.boundary.enabled=false kd.relative.enabled=false kd.roi.enabled=false
+python training/train_distillation.py --config configs/distillation.yaml \
+    --set experiment.name=kd_boundary_only \
+    kd.depth.enabled=false kd.feature.enabled=false kd.relative.enabled=false kd.roi.enabled=false
+python training/train_distillation.py --config configs/distillation.yaml \
+    --set experiment.name=kd_relative_only \
+    kd.depth.enabled=false kd.feature.enabled=false kd.boundary.enabled=false kd.roi.enabled=false
+python training/train_distillation.py --config configs/distillation.yaml \
+    --set experiment.name=kd_roi_only \
+    kd.depth.enabled=false kd.feature.enabled=false kd.boundary.enabled=false kd.relative.enabled=false
+
+# ---------- Collect the ablation table ----------
+python evaluation/ablation.py --experiments outputs/experiments --output docs/ablation
+
+# ---------- Evaluation (STEP 14-16) ----------
+python evaluation/evaluate_depth.py --model outputs/checkpoints/student_distilled_best.pt \
+    --data configs/data/sunrgbd.yaml
+python calibration/camera_calibration.py --capture 0 --pattern-size 9 6 --square-size 0.025
+python evaluation/evaluate_distance.py --model outputs/checkpoints/student_distilled_best.pt \
+    --data configs/data/sunrgbd.yaml
+
+# ---------- Inference (STEP 17-19) ----------
+python inference/predict_image.py --source data/test.jpg --save-depth
+python inference/predict_video.py --source data/test.mp4 --show-depth
+python inference/webcam.py --camera 0
+
+# ---------- Navigation, tests, benchmark, export (STEP 20-23) ----------
+python evaluation/evaluate_navigation.py \
+    --predictions outputs/predictions/test_telemetry.csv --ground-truth data/nav_gt.csv
+python -m pytest tests/ -q
+python evaluation/benchmark_latency.py \
+    --depth-model outputs/checkpoints/student_distilled_best.pt
+python evaluation/validate_numerical_consistency.py \
+    --model outputs/checkpoints/student_distilled_best.pt --formats onnx
+
+# ---------- Diagnostics, when something is wrong ----------
+python datasets/scripts/diagnose_pairing.py --data configs/data/sunrgbd.yaml
+python datasets/scripts/repair_orphaned_pairs.py --data datasets/sunrgbd            # dry run
+python datasets/scripts/repair_orphaned_pairs.py --data datasets/sunrgbd --apply
+```
+
+Add `--set train.device=cpu train.epochs=1 train.batch=2` to any training
+command for a fast smoke test before committing a GPU to a full run. Note that
+`--set` is accepted by the four `training/*.py` scripts only; the tuning and
+evaluation scripts take explicit flags instead.
 
 ## Citation
 
