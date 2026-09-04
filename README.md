@@ -314,6 +314,7 @@ python training/train_distillation.py --config configs/distillation.yaml \
 |---|---|
 | `Checkpoint not found` | The error lists every path searched. Train first, or pass `--model`. |
 | `Dataset config not found` | Run `prepare_sunrgbd.py`; the message shows the expected command. |
+| `ignoring image with missing depth map ....npy` then `No labels found` | RGB images have no paired depth map. Ultralytics probes `depth/<split>/<stem>.png` first and only names `.npy` as the fallback, so the `.npy` in that message is a symptom, not the format. The trainers now catch this in under a second and print the per-split counts, the suffixes actually present, and the fix: `repair_orphaned_pairs.py` (drops half-pairs) or a re-run of `prepare_sunrgbd.py` (restores every scene). |
 | Student loss decreases but nothing learns | `.pt` files load with `requires_grad=False`. Use `StudentDepthModel`, which calls `unfreeze()`. |
 | `cannot pickle '_thread.lock'` | A KD criterion stored on the model. Keep it in the module registry — see `training/kd_trainer.py`. |
 | δ1 looks implausibly good | You are reading MODE 2 (aligned). MODE 1 is the metric number. |

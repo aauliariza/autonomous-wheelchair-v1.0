@@ -28,6 +28,7 @@ from training.common import (  # noqa: E402
     export_best_checkpoint,
     resolve_data_yaml,
     setup_experiment,
+    verify_depth_pairing,
 )
 from utils.io import load_config, merge_overrides, save_json  # noqa: E402
 from utils.logger import get_logger  # noqa: E402
@@ -46,6 +47,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         config = merge_overrides(load_config(args.config), args.overrides)
         data_yaml = resolve_data_yaml(config)
+        verify_depth_pairing(data_yaml)
         run_dir = setup_experiment(config, args.config, extra={"role": "student_baseline"})
 
         from ultralytics import YOLO

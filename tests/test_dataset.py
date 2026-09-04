@@ -298,3 +298,68 @@ class TestSunRGBDObstacleEndToEnd:
         """A missing split file fails with a recovery command, not a stack trace."""
         with pytest.raises(sunrgbd_obstacle.ConversionError, match="Split file not found"):
             sunrgbd_obstacle.load_split_file(tmp_path / "nope.json")
+
+
+class TestDepthPairingPrecheck:
+    """The fail-fast RGB-depth pairing guard used by every depth trainer."""
+
+    @staticmethod
+    def _dataset(root: Path, n: int = 3, depth_for: int | None = None) -> Path:
+        """Build a minimal images/depth tree; ``depth_for`` limits depth coverage."""
+        import yaml
+
+        depth_for = n if depth_for is None else depth_for
+        for split in ("train", "val"):
+            (root / "images" / split).mkdir(parents=True)
+            (root / "depth" / split).mkdir(parents=True)
+            for i in range(n):
+                (root / "images" / split / f"s{i}.jpg").write_bytes(b"x")
+                if i < depth_for:
+                    (root / "depth" / split / f"s{i}.png").write_bytes(b"x")
+        cfg = root / "data.yaml"
+        cfg.write_text(yaml.safe_dump({"path": str(root), "train": "images/train", "val": "images/val"}))
+        return cfg
+
+    def test_fully_paired_dataset_passes(self, tmp_path: Path) -> None:
+        """A complete dataset reports its per-split pair counts."""
+        from training.common import verify_depth_pairing
+
+        assert verify_depth_pairing(self._dataset(tmp_path / "ok")) == {"train": 3, "val": 3}
+
+    def test_npy_depth_is_accepted(self, tmp_path: Path) -> None:
+        """Ultralytics probes .npy after .png, so the guard must accept it too."""
+        from training.common import verify_depth_pairing
+
+        cfg = self._dataset(tmp_path / "npy")
+        for p in (tmp_path / "npy" / "depth").rglob("*.png"):
+            p.rename(p.with_suffix(".npy"))
+        assert verify_depth_pairing(cfg) == {"train": 3, "val": 3}
+
+    def test_missing_depth_reports_counts_and_recovery(self, tmp_path: Path) -> None:
+        """The user-facing failure: orphaned RGB with no depth companion."""
+        from training.common import verify_depth_pairing
+
+        cfg = self._dataset(tmp_path / "orphan", n=3, depth_for=1)
+        with pytest.raises(ValueError, match=r"2 of 3 RGB images have no depth map"):
+            verify_depth_pairing(cfg)
+        with pytest.raises(ValueError, match="repair_orphaned_pairs.py"):
+            verify_depth_pairing(cfg)
+
+    def test_empty_depth_directory_is_named_as_such(self, tmp_path: Path) -> None:
+        """An empty depth dir must be distinguished from a wrong-extension one."""
+        from training.common import verify_depth_pairing
+
+        cfg = self._dataset(tmp_path / "empty", n=2, depth_for=0)
+        with pytest.raises(ValueError, match="NONE"):
+            verify_depth_pairing(cfg)
+
+    def test_missing_dataset_root_raises_filenotfound(self, tmp_path: Path) -> None:
+        """A stale 'path:' entry fails with the preparation command, not a KeyError."""
+        import yaml
+
+        from training.common import verify_depth_pairing
+
+        cfg = tmp_path / "gone.yaml"
+        cfg.write_text(yaml.safe_dump({"path": str(tmp_path / "absent")}))
+        with pytest.raises(FileNotFoundError, match="Dataset root not found"):
+            verify_depth_pairing(cfg)

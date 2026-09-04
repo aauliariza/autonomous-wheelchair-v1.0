@@ -165,3 +165,93 @@ def export_best_checkpoint(run_dir: Path, destination: str | Path) -> Path | Non
     shutil.copy2(best, dest)
     LOG.info("Exported best checkpoint -> %s", dest)
     return dest
+
+
+# Extensions Ultralytics' DepthDataset accepts for a depth target, in the order
+# it probes them (ultralytics/data/dataset.py: DepthDataset._depth_path_for).
+DEPTH_SUFFIXES = (".png", ".npy")
+IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
+
+
+def _stems(directory: Path, suffixes: tuple[str, ...]) -> set[str]:
+    """Return the filename stems in ``directory`` whose suffix is in ``suffixes``."""
+    if not directory.is_dir():
+        return set()
+    return {p.stem for p in directory.iterdir() if p.suffix.lower() in suffixes}
+
+
+def verify_depth_pairing(data_yaml: str | Path, splits: tuple[str, ...] = ("train", "val")) -> dict[str, int]:
+    """Fail fast when RGB images have no paired depth map.
+
+    Ultralytics' ``DepthDataset`` silently SKIPS an image whose depth companion is
+    missing, then aborts with "No labels found" only after scanning the whole
+    split. On SUN RGB-D that wastes minutes per attempt and hides the real cause,
+    so this reproduces the same pairing rule (``images/<split>/x.jpg`` ->
+    ``depth/<split>/x.{png,npy}``) up front, in one directory listing per split.
+
+    Args:
+        data_yaml (str | Path): Prepared dataset YAML with a ``path`` entry.
+        splits (tuple): Split subdirectories to check.
+
+    Returns:
+        (dict): Paired-image count per split that exists.
+
+    Raises:
+        FileNotFoundError: The dataset root or a split's ``images/`` is absent.
+        ValueError: A split has unpaired images, naming the recovery command.
+    """
+    from utils.io import load_yaml
+
+    data_yaml = Path(data_yaml)
+    cfg = load_yaml(data_yaml)
+    root = Path(cfg.get("path", data_yaml.parent))
+    if not root.is_dir():
+        raise FileNotFoundError(
+            f"Dataset root not found: {root.resolve()} (from 'path:' in {data_yaml})\n"
+            f"  Recovery: python datasets/scripts/prepare_sunrgbd.py --source /path/to/SUNRGBD "
+            f"--output {root} --config-out {data_yaml}"
+        )
+
+    paired: dict[str, int] = {}
+    for split in splits:
+        img_dir, dep_dir = root / "images" / split, root / "depth" / split
+        if not img_dir.is_dir():
+            if split == "train":
+                raise FileNotFoundError(f"Missing image split: {img_dir.resolve()}")
+            continue
+
+        img_stems = _stems(img_dir, IMAGE_SUFFIXES)
+        dep_stems = _stems(dep_dir, DEPTH_SUFFIXES)
+        missing = sorted(img_stems - dep_stems)
+        paired[split] = len(img_stems) - len(missing)
+
+        if not missing:
+            LOG.info("Split '%s': %d RGB-depth pairs OK", split, paired[split])
+            continue
+
+        # Report what the depth directory ACTUALLY holds: an empty directory, a
+        # wrong extension and a name mismatch each need a different fix, and the
+        # counts alone cannot tell them apart.
+        present = sorted({p.suffix.lower() for p in dep_dir.iterdir()}) if dep_dir.is_dir() else []
+        raise ValueError(
+            f"Split '{split}': {len(missing)} of {len(img_stems)} RGB images have no depth map "
+            f"in {dep_dir.resolve()} ({paired[split]} usable pairs).\n"
+            f"  Ultralytics probes {' then '.join(DEPTH_SUFFIXES)}; suffixes present there: "
+            f"{present or 'NONE (directory empty or absent)'}\n"
+            f"  First missing stems: {', '.join(missing[:3])}\n"
+            f"  Recovery, in order:\n"
+            f"    1. Drop the half-pairs (fast, keeps the rest):\n"
+            f"       python datasets/scripts/repair_orphaned_pairs.py --data {root}\n"
+            f"       python datasets/scripts/repair_orphaned_pairs.py --data {root} --apply\n"
+            f"    2. Or re-convert from the raw archive (slow, restores every scene):\n"
+            f"       python datasets/scripts/prepare_sunrgbd.py --source /path/to/SUNRGBD "
+            f"--output {root} --config-out {data_yaml}\n"
+            f"    3. Then confirm: python datasets/scripts/verify_dataset.py --data {data_yaml}"
+        )
+
+    if not paired.get("train"):
+        raise ValueError(
+            f"No usable RGB-depth pairs in {root / 'images' / 'train'}. Training cannot start.\n"
+            f"  Recovery: python datasets/scripts/verify_dataset.py --data {data_yaml}"
+        )
+    return paired
