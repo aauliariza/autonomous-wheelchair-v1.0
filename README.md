@@ -250,6 +250,21 @@ KD terms active: {'active_terms': ['gt', 'boundary'], 'lambdas': {'gt': 1.0, 'bo
 
 ### STEP 6c — Obstacle detector (optional)
 
+Profile the labels first — they set the ceiling on every detection metric:
+
+```bash
+python datasets/scripts/analyze_obstacle_labels.py --labels datasets/obstacle/labels/train
+```
+
+SUN RGB-D's boxes are **object** annotations, not curated navigation obstacles.
+The converter keeps every one of them, so the class spans a wardrobe and a
+picture on a wall — a label with no consistent visual signature. Two consequences
+worth knowing before reading any mAP number: a correct detection of an object
+that annotator happened not to label counts as a false positive, and boxes that
+sit high in the frame are things a wheelchair drives under. Judge the detector by
+the safety metrics in spec section AM (missed obstacles, unsafe commands), not by
+mAP against these labels.
+
 Fine-tunes YOLO26n down to a single class, `obstacle`. Needs the dataset from
 STEP 6b; `train_detection.py` refuses to start unless it declares `nc=1`.
 

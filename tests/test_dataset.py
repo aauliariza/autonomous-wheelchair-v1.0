@@ -404,3 +404,48 @@ class TestDepthPairingPrecheck:
         self._dataset(tmp_path / "parity", n=1)
         img = tmp_path / "parity" / "images" / "train" / "s0.jpg"
         assert str(ultralytics_depth_path(img)) == DepthDataset._depth_path_for(None, str(img))
+
+
+class TestObstacleLabelProfile:
+    """The label profiler used to explain the detector's mAP ceiling."""
+
+    obstacle_profile = _load("analyze_obstacle_labels", "datasets/scripts/analyze_obstacle_labels.py")
+
+    @staticmethod
+    def _labels(tmp_path: Path, rows: list[str]) -> Path:
+        d = tmp_path / "labels" / "train"
+        d.mkdir(parents=True)
+        for i, r in enumerate(rows):
+            (d / f"img{i}.txt").write_text(r)
+        return d
+
+    def test_counts_boxes_and_images(self, tmp_path: Path) -> None:
+        """Two files, three boxes."""
+        d = self._labels(tmp_path, ["0 0.5 0.5 0.2 0.2\n0 0.3 0.3 0.1 0.1\n", "0 0.5 0.5 0.4 0.4\n"])
+        boxes, n = self.obstacle_profile.read_boxes(d)
+        p = self.obstacle_profile.profile(boxes, n)
+        assert (p["boxes"], p["images"]) == (3, 2)
+        assert p["per_image"] == 1.5
+
+    def test_flags_tiny_boxes(self, tmp_path: Path) -> None:
+        """A 0.01x0.01 box is 0.01% of the image and must register as tiny."""
+        d = self._labels(tmp_path, ["0 0.5 0.5 0.01 0.01\n0 0.5 0.5 0.5 0.5\n"])
+        boxes, n = self.obstacle_profile.read_boxes(d)
+        assert self.obstacle_profile.profile(boxes, n)["tiny_lt_0p1pct"] == 0.5
+
+    def test_flags_boxes_high_in_frame(self, tmp_path: Path) -> None:
+        """A box whose bottom edge sits above 0.40 is wall-mounted, not a floor obstacle."""
+        d = self._labels(tmp_path, ["0 0.5 0.15 0.2 0.2\n0 0.5 0.80 0.2 0.2\n"])
+        boxes, n = self.obstacle_profile.read_boxes(d)
+        assert self.obstacle_profile.profile(boxes, n)["high_in_frame"] == 0.5
+
+    def test_malformed_lines_are_skipped(self, tmp_path: Path) -> None:
+        """A truncated or non-numeric row must not abort the profile."""
+        d = self._labels(tmp_path, ["0 0.5 0.5\n0 a b c d\n0 0.5 0.5 0.2 0.2\n"])
+        boxes, _ = self.obstacle_profile.read_boxes(d)
+        assert len(boxes) == 1
+
+    def test_missing_directory_reports_recovery(self, tmp_path: Path) -> None:
+        """A wrong path names the converter command, not a traceback."""
+        with pytest.raises(FileNotFoundError, match="Label directory not found"):
+            self.obstacle_profile.read_boxes(tmp_path / "nope")
