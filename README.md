@@ -266,6 +266,24 @@ you want that term learning from tuned boxes.
 
 ### STEP 7-8 — Teacher
 
+Before fine-tuning, measure the released checkpoint **zero-shot** on your split.
+If fine-tuning does not beat this, it is hurting rather than helping, and the
+fix is a gentler recipe — not more epochs:
+
+```bash
+python evaluation/evaluate_depth.py --model yolo26x-depth.pt --data configs/data/sunrgbd.yaml
+```
+
+After any run, diagnose the curve before trusting the checkpoint:
+
+```bash
+python scripts/analyze_training.py --results outputs/experiments/<run>/results.csv
+```
+
+It reports which epoch produced `best.pt`, the val/train loss ratio over time,
+and how many epochs were spent after the best one. A ratio that widens while
+train loss keeps falling means regularize, not train longer.
+
 The teacher is trained first and to convergence, because every KD experiment
 then distils from the same frozen checkpoint — that is what keeps the ablation
 rows comparable. Ultralytics fits the log-affine calibration (`cal_a`/`cal_b`)

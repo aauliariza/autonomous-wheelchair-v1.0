@@ -44,7 +44,14 @@ train:
   cos_lr: true
   patience: 25
   amp: true                     # mixed precision; ignored on CPU
-  freeze: null                  # e.g. 10 to freeze the backbone
+  # MEASURED (outputs/experiments/teacher_yolo26x_depth/results.csv, 76 epochs):
+  # the val/train loss ratio widened 1.28x -> 2.23x while train loss fell 49% and
+  # val loss fell only 15% before rising again. That is overfitting, not
+  # under-training: 5285 official-split images against 55.8M parameters.
+  # Freezing model.0-model.9 keeps the pretrained backbone and lets the depth
+  # head adapt. Use 11 to freeze the whole backbone (it is 11 layers), null to
+  # fine-tune everything as the first run did.
+  freeze: 10
   val: true
   plots: true
   save_period: -1
@@ -53,11 +60,15 @@ train:
 loss:
   dlog: 1.0                     # SILog weight
   dgrad: 0.5                    # multi-scale gradient-matching weight
-  dlam: 1.0                     # 1.0 = scale-invariant, 0.0 = log-RMSE
-  # NOTE: dlam=1.0 makes the GT loss fully SCALE-INVARIANT. Absolute metric
-  # scale then comes only from post-training log-affine calibration
-  # (cal_a/cal_b). To push the network itself toward metric output, lower dlam
-  # (e.g. 0.85). See docs/depth_to_distance.md.
+  dlam: 0.85                    # 1.0 = scale-invariant, 0.0 = log-RMSE
+  # WHY NOT 1.0 (the first run's value): a fully scale-invariant loss never
+  # penalizes absolute-scale error, so the output scale floats free and only a
+  # post-hoc log-affine calibration anchors it. The first teacher needed
+  # cal_b=-2.5391, i.e. exp(b)=0.0789 — a 12.7x shrink, against 1.21x and 1.37x
+  # for the released n and x checkpoints. Its MODE 1 (metric) delta1 was 0.4946
+  # while MODE 2 (aligned) reached 0.7080. 0.85 keeps most of the SILog
+  # robustness while making the loss care about absolute scale.
+  # See docs/depth_to_distance.md "Where metric scale actually comes from".
 
 augment:
   # Ultralytics applies every geometric op to the paired depth map with
@@ -74,6 +85,11 @@ augment:
   scale: 0.2
   shear: 0.0
   perspective: 0.0
+  # Photometric augmentation is raised as the regularizer of choice because it
+  # cannot corrupt geometry. Geometric ZOOM is deliberately NOT increased:
+  # enlarging an object without changing its depth label teaches the network
+  # that the same apparent size maps to different distances, which is precisely
+  # the scale ambiguity this configuration is trying to remove.
   hsv_h: 0.015                  # photometric only — does not affect depth
-  hsv_s: 0.4
-  hsv_v: 0.4
+  hsv_s: 0.7
+  hsv_v: 0.5
