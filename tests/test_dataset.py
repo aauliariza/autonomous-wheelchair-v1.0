@@ -298,3 +298,154 @@ class TestSunRGBDObstacleEndToEnd:
         """A missing split file fails with a recovery command, not a stack trace."""
         with pytest.raises(sunrgbd_obstacle.ConversionError, match="Split file not found"):
             sunrgbd_obstacle.load_split_file(tmp_path / "nope.json")
+
+
+class TestDepthPairingPrecheck:
+    """The fail-fast RGB-depth pairing guard used by every depth trainer."""
+
+    @staticmethod
+    def _dataset(root: Path, n: int = 3, depth_for: int | None = None) -> Path:
+        """Build a minimal images/depth tree; ``depth_for`` limits depth coverage."""
+        import yaml
+
+        depth_for = n if depth_for is None else depth_for
+        for split in ("train", "val"):
+            (root / "images" / split).mkdir(parents=True)
+            (root / "depth" / split).mkdir(parents=True)
+            for i in range(n):
+                (root / "images" / split / f"s{i}.jpg").write_bytes(b"x")
+                if i < depth_for:
+                    (root / "depth" / split / f"s{i}.png").write_bytes(b"x")
+        cfg = root / "data.yaml"
+        cfg.write_text(yaml.safe_dump({"path": str(root), "train": "images/train", "val": "images/val"}))
+        return cfg
+
+    def test_fully_paired_dataset_passes(self, tmp_path: Path) -> None:
+        """A complete dataset reports its per-split pair counts."""
+        from training.common import verify_depth_pairing
+
+        assert verify_depth_pairing(self._dataset(tmp_path / "ok")) == {"train": 3, "val": 3}
+
+    def test_npy_depth_is_accepted(self, tmp_path: Path) -> None:
+        """Ultralytics probes .npy after .png, so the guard must accept it too."""
+        from training.common import verify_depth_pairing
+
+        cfg = self._dataset(tmp_path / "npy")
+        for p in (tmp_path / "npy" / "depth").rglob("*.png"):
+            p.rename(p.with_suffix(".npy"))
+        assert verify_depth_pairing(cfg) == {"train": 3, "val": 3}
+
+    def test_missing_depth_reports_counts_and_recovery(self, tmp_path: Path) -> None:
+        """The user-facing failure: orphaned RGB with no depth companion."""
+        from training.common import verify_depth_pairing
+
+        cfg = self._dataset(tmp_path / "orphan", n=3, depth_for=1)
+        with pytest.raises(ValueError, match=r"2 of 3 RGB images have no depth map"):
+            verify_depth_pairing(cfg)
+        with pytest.raises(ValueError, match="repair_orphaned_pairs.py"):
+            verify_depth_pairing(cfg)
+
+    def test_empty_depth_directory_is_named_as_such(self, tmp_path: Path) -> None:
+        """An empty depth dir must be distinguished from a wrong-extension one."""
+        from training.common import verify_depth_pairing
+
+        cfg = self._dataset(tmp_path / "empty", n=2, depth_for=0)
+        with pytest.raises(ValueError, match="NONE"):
+            verify_depth_pairing(cfg)
+
+    def test_missing_dataset_root_raises_filenotfound(self, tmp_path: Path) -> None:
+        """A stale 'path:' entry fails with the preparation command, not a KeyError."""
+        import yaml
+
+        from training.common import verify_depth_pairing
+
+        cfg = tmp_path / "gone.yaml"
+        cfg.write_text(yaml.safe_dump({"path": str(tmp_path / "absent")}))
+        with pytest.raises(FileNotFoundError, match="Dataset root not found"):
+            verify_depth_pairing(cfg)
+
+    @staticmethod
+    def _case_sensitive(tmp_path: Path) -> bool:
+        """True when the filesystem distinguishes 'A' from 'a' in filenames."""
+        probe = tmp_path / "CaseProbe"
+        probe.write_bytes(b"")
+        return not (tmp_path / "caseprobe").exists()
+
+    def test_wrong_case_suffix_is_rejected(self, tmp_path: Path) -> None:
+        """'.PNG' passes a stem comparison but Ultralytics only opens '.png'."""
+        from training.common import verify_depth_pairing
+
+        if not self._case_sensitive(tmp_path):
+            pytest.skip("filesystem is case-insensitive; the mismatch cannot occur here")
+
+        cfg = self._dataset(tmp_path / "case", n=2, depth_for=2)
+        for p in (tmp_path / "case" / "depth").rglob("*.png"):
+            p.rename(p.with_suffix(".PNG"))
+        with pytest.raises(ValueError, match="case-sensitive"):
+            verify_depth_pairing(cfg)
+
+    def test_broken_symlink_depth_is_rejected(self, tmp_path: Path) -> None:
+        """iterdir() lists a dangling symlink; is_file() — and Ultralytics — reject it."""
+        from training.common import verify_depth_pairing
+
+        cfg = self._dataset(tmp_path / "link", n=2, depth_for=0)
+        for i in range(2):
+            (tmp_path / "link" / "depth" / "train" / f"s{i}.png").symlink_to(tmp_path / "gone" / f"s{i}.png")
+        with pytest.raises(ValueError, match="broken symlink"):
+            verify_depth_pairing(cfg)
+
+    def test_resolution_matches_ultralytics_implementation(self, tmp_path: Path) -> None:
+        """Guard against drift from DepthDataset._depth_path_for."""
+        pytest.importorskip("ultralytics")
+        from ultralytics.data.dataset import DepthDataset
+
+        from training.common import ultralytics_depth_path
+
+        self._dataset(tmp_path / "parity", n=1)
+        img = tmp_path / "parity" / "images" / "train" / "s0.jpg"
+        assert str(ultralytics_depth_path(img)) == DepthDataset._depth_path_for(None, str(img))
+
+
+class TestObstacleLabelProfile:
+    """The label profiler used to explain the detector's mAP ceiling."""
+
+    obstacle_profile = _load("analyze_obstacle_labels", "datasets/scripts/analyze_obstacle_labels.py")
+
+    @staticmethod
+    def _labels(tmp_path: Path, rows: list[str]) -> Path:
+        d = tmp_path / "labels" / "train"
+        d.mkdir(parents=True)
+        for i, r in enumerate(rows):
+            (d / f"img{i}.txt").write_text(r)
+        return d
+
+    def test_counts_boxes_and_images(self, tmp_path: Path) -> None:
+        """Two files, three boxes."""
+        d = self._labels(tmp_path, ["0 0.5 0.5 0.2 0.2\n0 0.3 0.3 0.1 0.1\n", "0 0.5 0.5 0.4 0.4\n"])
+        boxes, n = self.obstacle_profile.read_boxes(d)
+        p = self.obstacle_profile.profile(boxes, n)
+        assert (p["boxes"], p["images"]) == (3, 2)
+        assert p["per_image"] == 1.5
+
+    def test_flags_tiny_boxes(self, tmp_path: Path) -> None:
+        """A 0.01x0.01 box is 0.01% of the image and must register as tiny."""
+        d = self._labels(tmp_path, ["0 0.5 0.5 0.01 0.01\n0 0.5 0.5 0.5 0.5\n"])
+        boxes, n = self.obstacle_profile.read_boxes(d)
+        assert self.obstacle_profile.profile(boxes, n)["tiny_lt_0p1pct"] == 0.5
+
+    def test_flags_boxes_high_in_frame(self, tmp_path: Path) -> None:
+        """A box whose bottom edge sits above 0.40 is wall-mounted, not a floor obstacle."""
+        d = self._labels(tmp_path, ["0 0.5 0.15 0.2 0.2\n0 0.5 0.80 0.2 0.2\n"])
+        boxes, n = self.obstacle_profile.read_boxes(d)
+        assert self.obstacle_profile.profile(boxes, n)["high_in_frame"] == 0.5
+
+    def test_malformed_lines_are_skipped(self, tmp_path: Path) -> None:
+        """A truncated or non-numeric row must not abort the profile."""
+        d = self._labels(tmp_path, ["0 0.5 0.5\n0 a b c d\n0 0.5 0.5 0.2 0.2\n"])
+        boxes, _ = self.obstacle_profile.read_boxes(d)
+        assert len(boxes) == 1
+
+    def test_missing_directory_reports_recovery(self, tmp_path: Path) -> None:
+        """A wrong path names the converter command, not a traceback."""
+        with pytest.raises(FileNotFoundError, match="Label directory not found"):
+            self.obstacle_profile.read_boxes(tmp_path / "nope")
