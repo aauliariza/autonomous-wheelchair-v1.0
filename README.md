@@ -527,10 +527,17 @@ python datasets/scripts/verify_dataset.py --data configs/data/sunrgbd.yaml \
 python datasets/scripts/convert_sunrgbd_obstacle.py \
     --source /path/to/SUNRGBD --meta /path/to/SUNRGBDMeta2DBB_v2.mat \
     --split-file configs/data/sunrgbd_official_split.json --output datasets/obstacle
+# or convert an externally annotated set instead of SUN RGB-D's own boxes:
+# python datasets/scripts/convert_to_obstacle_dataset.py --format yolo --source /path/to/annotated --output datasets/obstacle
+python datasets/scripts/analyze_obstacle_labels.py --labels datasets/obstacle/labels/train
 python training/train_detection.py --config configs/detection.yaml
 
 # ---------- Teacher, Experiment F (STEP 7-8) ----------
+# Baseline first: if fine-tuning cannot beat the released checkpoint zero-shot,
+# it is hurting rather than helping.
+python evaluation/evaluate_depth.py --model yolo26x-depth.pt --data configs/data/sunrgbd.yaml
 python training/train_teacher.py --config configs/teacher.yaml
+python scripts/analyze_training.py --results outputs/experiments/teacher_yolo26x_depth/results.csv
 python evaluation/evaluate_depth.py --model outputs/checkpoints/teacher_best.pt \
     --data configs/data/sunrgbd.yaml
 
